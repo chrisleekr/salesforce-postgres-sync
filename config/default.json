@@ -1,0 +1,77 @@
+{
+  "salesforce": {
+    "mode": "sandbox",
+    "username": "",
+    "password": "",
+    "securityToken": "",
+    "commonFields": [
+      {
+        "name": "sync_id",
+        "type": "integer",
+        "notNull": true,
+        "primaryKey": true,
+        "defaultSequence": true,
+        "sequenceName": "sync_id_seq"
+      },
+      {
+        "name": "sync_update_timestamp",
+        "type": "timestamp",
+        "createIndex": true
+      },
+      {
+        "name": "sync_status",
+        "type": "varchar(30)",
+        "description": "TODO enum SYNCED|ERROR|PENDING, just string for now",
+        "createIndex": true
+      },
+      {
+        "name": "Id",
+        "type": "id",
+        "createUniqueIndex": true,
+        "sfColumn": true
+      },
+      {
+        "name": "CreatedDate",
+        "type": "timestamp",
+        "createIndex": true,
+        "sfColumn": true
+      },
+      {
+        "name": "IsDeleted",
+        "type": "boolean",
+        "createIndex": true,
+        "sfColumn": true
+      },
+      {
+        "name": "LastModifiedDate",
+        "type": "timestamp",
+        "createIndex": true,
+        "sfColumn": true
+      },
+      {
+        "name": "SystemModstamp",
+        "type": "timestamp",
+        "createIndex": true,
+        "sfColumn": true
+      }
+    ],
+    "objects": "{}",
+    "postgresSchema": "my_salesforce_schema"
+  },
+  "postgres": {
+    "readwrite": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "postgres",
+      "user": "postgres",
+      "password": "postgres"
+    },
+    "readonly": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "postgres",
+      "user": "postgres",
+      "password": "postgres"
+    }
+  }
+}

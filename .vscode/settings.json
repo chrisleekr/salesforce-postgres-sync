@@ -1,0 +1,35 @@
+{
+  "editor.insertSpaces": true,
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "eslint.alwaysShowStatus": true,
+  "files.trimTrailingWhitespace": true,
+  "files.exclude": {},
+  "files.insertFinalNewline": true,
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "search.exclude": {
+    ".git": true,
+    ".build": true,
+    "**/.DS_Store": true,
+    "**/.vscode": true,
+    "**/coverage": true,
+    "**/node_modules": true
+  },
+  "cSpell.words": [
+    "bbands",
+    "Bollinger",
+    "chrisleekr",
+    "jsforce",
+    "MACD",
+    "Modstamp",
+    "mrkdwn",
+    "Prefilterable",
+    "readwrite",
+    "sobject",
+    "tulind",
+    "varchar"
+  ],
+  "eslint.format.enable": true,
+  "eslint.codeActionsOnSave.mode": "all",
+  "ansible.python.interpreterPath": "/Users/chrislee/.pyenv/versions/3.6.15/bin/python"
+}
