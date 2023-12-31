@@ -10,7 +10,12 @@ const salesforceConn = new jsforce.Connection({
       : 'https://test.salesforce.com'
 });
 
-salesforceConn.bulk.pollTimeout = 25000;
+salesforceConn.bulk.pollTimeout = 60000; // 60 seconds
+
+const checkLimit = async rawLogger => {
+  const logger = rawLogger.child({ helper: 'salesforce', func: 'checkLimit' });
+  logger.info({ apiUsage: salesforceConn.limitInfo.apiUsage }, 'API Usage');
+};
 
 const getSalesforceColumns = salesforceObjectFields => {
   const salesforceCommonFields = config
@@ -39,6 +44,7 @@ const login = async rawLogger => {
 };
 
 const describe = async (objectName, rawLogger) => {
+  await checkLimit(rawLogger);
   const logger = rawLogger.child({
     helper: 'salesforce',
     func: 'describe',
@@ -53,6 +59,7 @@ const describe = async (objectName, rawLogger) => {
 };
 
 const bulkQuery = async (query, onRecord, onError, onEnd, rawLogger) => {
+  await checkLimit(rawLogger);
   const logger = rawLogger.child({ helper: 'salesforce' });
 
   logger.info({ data: { query } }, 'Starting bulk query');
@@ -64,9 +71,69 @@ const bulkQuery = async (query, onRecord, onError, onEnd, rawLogger) => {
     .on('end', onEnd);
 };
 
+const query = async (soqlQuery, onRecord, onEnd, rawLogger) => {
+  await checkLimit(rawLogger);
+  const logger = rawLogger.child({ helper: 'salesforce' });
+
+  logger.info({ data: { soqlQuery } }, 'Starting query');
+
+  let totalRecords = 0;
+  let response = await salesforceConn.query(soqlQuery, {
+    autoFetch: true,
+    maxFetch: 2000
+  });
+  let batchCount = 1;
+
+  let { records } = response;
+  logger.info(
+    {
+      data: {
+        batchCount,
+        recordsLength: records.length,
+        nextRecordsUrl: response.nextRecordsUrl
+      }
+    },
+    `Query count: ${batchCount} Records in this batch: ${records.length} nextRecordsUrl: ${response.nextRecordsUrl}`
+  );
+  batchCount += 1;
+
+  // Loop records and execute onRecord with record
+  records.forEach(record => onRecord(record));
+
+  totalRecords += records.length;
+
+  while (!response.done) {
+    response = await salesforceConn.queryMore(response.nextRecordsUrl);
+    records = response.records;
+
+    logger.info(
+      {
+        data: {
+          batchCount,
+          recordsLength: records.length,
+          nextRecordsUrl: response.nextRecordsUrl
+        }
+      },
+      `Query count: ${batchCount} Records in this batch: ${
+        records.length
+      } nextRecordsUrl: ${response.nextRecordsUrl ?? ''}`
+    );
+
+    // Loop records and execute onRecord with record
+    records.forEach(record => onRecord(record));
+
+    batchCount += 1;
+    totalRecords += records.length;
+  }
+  logger.info(`Total records: ${totalRecords}`);
+
+  onEnd();
+};
+
 module.exports = {
   getSalesforceColumns,
   login,
   describe,
-  bulkQuery
+  bulkQuery,
+  query
 };

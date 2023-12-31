@@ -10,8 +10,7 @@
         "type": "integer",
         "notNull": true,
         "primaryKey": true,
-        "defaultSequence": true,
-        "sequenceName": "sync_id_seq"
+        "defaultSequence": true
       },
       {
         "name": "sync_update_timestamp",

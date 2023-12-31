@@ -162,6 +162,46 @@ const createOrUpdateTable = async (
     })
   );
 
+  // Get columns to create trigger for default now
+  const defaultNowToCreate = tableSchema.filter(field => field.defaultNow);
+
+  // Loop defaultNowToCreate and create trigger if not exists
+  await Promise.all(
+    defaultNowToCreate.map(async column => {
+      const triggerFunctionName = `trg_fn_${tableName}_${column.name}_trg`;
+
+      // Create trigger function if not exists
+      const triggerFunctionQuery =
+        `CREATE OR REPLACE FUNCTION ${schemaName}.${triggerFunctionName}() ` +
+        `RETURNS TRIGGER AS $$ ` +
+        `BEGIN ` +
+        `NEW.${column.name} = NOW(); ` +
+        `RETURN NEW; ` +
+        `END; ` +
+        `$$ LANGUAGE plpgsql;`;
+      await readwriteConn.query(triggerFunctionQuery);
+
+      const triggerName = `trg_${tableName}_${column.name}_trg`;
+
+      // Check trigger is already existing in the table or not
+      const selectTriggerQuery =
+        `SELECT trigger_name FROM information_schema.triggers ` +
+        `WHERE event_object_schema = '${schemaName}' ` +
+        `AND event_object_table = '${tableName}' AND trigger_name = '${triggerName}'`;
+      const triggerResult = await readonlyConn.query(selectTriggerQuery);
+
+      // Create trigger if not exists
+      if (triggerResult.rows.length === 0) {
+        const triggerQuery =
+          `CREATE TRIGGER ${triggerName} ` +
+          `BEFORE INSERT OR UPDATE ON ${schemaName}.${tableName} ` +
+          `FOR EACH ROW EXECUTE PROCEDURE ${triggerFunctionName}()`;
+        await readwriteConn.query(triggerQuery);
+        logger.info(`Created trigger if not exists ${triggerName}`);
+      }
+    })
+  );
+
   logger.info(`Created or updated table ${schemaName}.${tableName}`);
 };
 
@@ -180,15 +220,27 @@ const upsert = async (
   });
 
   const columnsString = columns.join(',');
-  const valuesString = values.map(value => `'${value}'`).join(',');
+
+  let columnIdx = 0;
+  const columnValues = [];
 
   const upsertQuery = `
     INSERT INTO ${schemaName}.${tableName} (${columnsString})
-    VALUES (${valuesString})
+    VALUES (${values
+      .map(value => {
+        columnValues.push(value);
+        columnIdx += 1;
+        return `$${columnIdx}`;
+      })
+      .join(',')})
     ON CONFLICT (${idColumn})
     DO UPDATE SET
       ${columns
-        .map((column, index) => `${column} = '${values[index]}'`)
+        .map((column, index) => {
+          columnValues.push(values[index]);
+          columnIdx += 1;
+          return `${column} = $${columnIdx}`;
+        })
         .join(',')}
   `;
 
@@ -196,14 +248,70 @@ const upsert = async (
     {
       data: { upsertQuery, schemaName, tableName, columns, values, idColumn }
     },
-    `Upserting ${tableName}`
+    `Upsert ${tableName}`
   );
 
-  return readwriteConn.query(upsertQuery);
+  return readwriteConn.query(upsertQuery, columnValues).catch(err => {
+    logger.error(
+      {
+        err,
+        data: { upsertQuery, schemaName, tableName, columns, values, idColumn }
+      },
+      `Error in upsert ${tableName}`
+    );
+    throw err;
+  });
+};
+
+const select = async (
+  schemaName,
+  tableName,
+  columns,
+  where,
+  orderBy,
+  limit,
+  rawLogger
+) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'select',
+    tableName
+  });
+
+  const columnsString = columns.join(',');
+  const whereString = where ? `WHERE ${where}` : '';
+  const orderByString = orderBy ? `ORDER BY ${orderBy}` : '';
+  const limitString = limit ? `LIMIT ${limit}` : '';
+
+  const selectQuery = `
+    SELECT ${columnsString}
+    FROM ${schemaName}.${tableName}
+    ${whereString}
+    ${orderByString}
+    ${limitString}
+  `;
+
+  logger.debug(
+    {
+      data: {
+        selectQuery,
+        schemaName,
+        tableName,
+        columns,
+        where,
+        orderBy,
+        limit
+      }
+    },
+    `Select ${tableName}`
+  );
+
+  return readonlyConn.query(selectQuery);
 };
 
 module.exports = {
   createSchemaIfNotExists,
   createOrUpdateTable,
-  upsert
+  upsert,
+  select
 };

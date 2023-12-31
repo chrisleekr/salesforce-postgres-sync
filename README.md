@@ -4,6 +4,6 @@ This is a demo project for two-way syncing between Salesforce and Postgres. It r
 
 ## Roadmap
 
-[x] Sync Salesforce schema to Postgres
-[ ] Sync Salesforce changes to Postgres
-[ ] Sync Postgres changes to Salesforce
+- [x] Sync Salesforce schema to Postgres
+- [ ] Sync Salesforce changes to Postgres
+- [ ] Sync Postgres changes to Salesforce

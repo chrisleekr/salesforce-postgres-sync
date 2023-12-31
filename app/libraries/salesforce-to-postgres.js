@@ -1,7 +1,9 @@
+/* eslint-disable no-loop-func */
 const config = require('config');
 const moment = require('moment');
 const salesforce = require('../helpers/salesforce');
 const postgres = require('../helpers/postgres');
+const dbConfig = require('../helpers/db-config');
 
 module.exports = async rawLogger => {
   const logger = rawLogger.child({ library: 'salesforce-to-postgres' });
@@ -14,41 +16,71 @@ module.exports = async rawLogger => {
 
   // Construct SELECT query for Salesforce based on the fields
   for (const salesforceObjectName of salesforceObjectNames) {
+    const tableName = salesforceObjectName.toLowerCase();
+
     const columns = salesforce.getSalesforceColumns(
       salesforceObjects[salesforceObjectName].fields
     );
 
     // Construct SELECT query for salesforce with fields
-    const lastModifiedDate = '2023-12-20T00:00:00Z'; // FIX: Get from database
+    const lastSyncTimestamp = await dbConfig.get(
+      `last-sync-timestamp-${salesforceObjectName}`,
+      logger
+    );
     const syncUpdateTimestamp = moment.utc().format();
-    const salesforceQuery = `SELECT ${columns.join(
+
+    const selectQuery = `SELECT ${columns.join(
       ','
-    )} FROM ${salesforceObjectName} WHERE LastModifiedDate > ${lastModifiedDate}`;
+    )} FROM ${salesforceObjectName}`;
 
-    // Query Salesforce using Bulk API
-    salesforce.bulkQuery(
-      salesforceQuery,
-      record => {
-        const tableName = salesforceObjectName.toLowerCase();
+    let whereClause = '';
+    let orderByClause = '';
 
-        postgres.upsert(
-          schemaName,
-          tableName,
-          ['sync_update_timestamp', 'sync_status', ...columns],
-          [syncUpdateTimestamp, 'SYNCED', ...Object.values(record)],
-          'id',
-          logger
-        );
-      },
-      error => {
-        logger.error(
-          { error },
-          `Error in bulk query for ${salesforceObjectName}`
-        );
-      },
-      () => {
-        logger.info(`Completed bulk query for ${salesforceObjectName}`);
-      },
+    // If lastSyncTimestamp is null, then do not add LastModifiedDate>${lastSyncTimestamp}
+    if (lastSyncTimestamp) {
+      whereClause = ` WHERE LastModifiedDate > ${lastSyncTimestamp}`;
+      orderByClause = ' ORDER BY LastModifiedDate ASC';
+    } else {
+      whereClause = '';
+      orderByClause = ' ORDER BY CreatedDate ASC';
+    }
+
+    await new Promise(resolve => {
+      salesforce.query(
+        `${selectQuery} ${whereClause} ${orderByClause}`,
+        record => {
+          logger.debug({ data: { record } }, 'Record');
+
+          postgres.upsert(
+            schemaName,
+            tableName,
+            ['sync_update_timestamp', 'sync_status', ...columns],
+            [
+              syncUpdateTimestamp,
+              'SYNCED',
+              ...Object.keys(record).reduce((acc, k) => {
+                if (columns.includes(k.toLowerCase())) {
+                  acc.push(record[k]);
+                }
+                return acc;
+              }, [])
+            ],
+            'id',
+            logger
+          );
+        },
+
+        () => {
+          logger.info(`Completed query for ${salesforceObjectName}`);
+          resolve();
+        },
+        logger
+      );
+    }, logger);
+
+    await dbConfig.set(
+      `last-sync-timestamp-${salesforceObjectName}`,
+      syncUpdateTimestamp,
       logger
     );
   }
