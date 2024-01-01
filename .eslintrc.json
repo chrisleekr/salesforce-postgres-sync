@@ -1,0 +1,21 @@
+{
+  "extends": ["airbnb", "prettier", "plugin:jest/recommended"],
+  "plugins": ["prettier", "jest"],
+  "rules": {
+    "prettier/prettier": ["error"],
+    "comma-dangle": ["error", "never"],
+    "max-len": ["error", { "code": 120 }],
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "no-await-in-loop": "off",
+    "no-restricted-syntax": ["off", "ForOfStatement"],
+    "no-underscore-dangle": "off"
+  },
+  "settings": {
+    "react": {
+      "version": "999.999.999"
+    }
+  },
+  "parserOptions": {
+    "ecmaVersion": 2020
+  }
+}

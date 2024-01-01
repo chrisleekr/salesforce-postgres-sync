@@ -1,0 +1,36 @@
+{
+  "salesforce": {
+    "mode": "SALESFORCE_MODE",
+    "username": "SALESFORCE_USERNAME",
+    "password": "SALESFORCE_PASSWORD",
+    "securityToken": "SALESFORCE_SECURITY_TOKEN",
+    "objects": {
+      "__name": "SALESFORCE_OBJECTS",
+      "__format": "json",
+      "__example": "{\"User\":{\"fields\":[\"BillingCity\",\"BillingCountry\",\"BillingPostalCode\",\"Phone\",\"FirstName\",\"IsPersonAccount\",\"LastName\"]},\"User\":{\"fields\":[\"Username\",\"LastName\",\"FirstName\",\"Email\"]}}"
+    },
+    "postgresSchema": "SALESFORCE_POSTGRES_SCHEMA"
+  },
+  "postgres": {
+    "readwrite": {
+      "host": "POSTGRES_READWRITE_HOST",
+      "port": {
+        "__name": "POSTGRES_READWRITE_PORT",
+        "__format": "number"
+      },
+      "database": "POSTGRES_READWRITE_DATABASE",
+      "user": "POSTGRES_READWRITE_USER",
+      "password": "POSTGRES_READWRITE_PASSWORD"
+    },
+    "readonly": {
+      "host": "POSTGRES_READONLY_HOST",
+      "port": {
+        "__name": "POSTGRES_READONLY_PORT",
+        "__format": "number"
+      },
+      "database": "POSTGRES_READONLY_DATABASE",
+      "user": "POSTGRES_READONLY_USER",
+      "password": "POSTGRES_READONLY_PASSWORD"
+    }
+  }
+}
