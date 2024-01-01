@@ -47,12 +47,69 @@ module.exports = async rawLogger => {
       orderByClause = ' ORDER BY LastModifiedDate ASC';
     }
 
+    // This is not working because of it's too large.
+    // One way to overcome the issue is querying with start/end date time.
+    // But that is still can be an issue if there are large amount of records within the day.
+    // await new Promise((resolve, reject) => {
+    //   salesforce.bulkQueryV2(
+    //     salesforceObjectName,
+    //     `${selectQuery} ${whereClause} ${orderByClause}`,
+    //     async record => {
+    //       logger.debug({ data: { record } }, 'Record');
+
+    //       await postgres.upsert(
+    //         schemaName,
+    //         tableName,
+    //         [
+    //           '_sync_update_timestamp',
+    //           '_sync_status',
+    //           '_sync_message',
+    //           ...columns
+    //         ],
+    //         [
+    //           syncUpdateTimestamp,
+    //           'SYNCED',
+    //           '',
+    //           ...Object.keys(record).reduce((acc, k) => {
+    //             if (columns.includes(k.toLowerCase())) {
+    //               acc.push(record[k]);
+    //             }
+    //             return acc;
+    //           }, [])
+    //         ],
+    //         'id',
+    //         logger
+    //       );
+    //     },
+    //     err => {
+    //       logger.error(
+    //         { err },
+    //         `Error in Salesforce object bulk query for ${salesforceObjectName}`
+    //       );
+
+    //       reject();
+    //     },
+    //     () => {
+    //       logger.info(`Completed query for ${salesforceObjectName}`);
+    //       dbConfig.set(
+    //         `last-sync-timestamp-${salesforceObjectName}`,
+    //         syncUpdateTimestamp,
+    //         logger
+    //       );
+
+    //       resolve();
+    //     },
+    //     logger
+    //   );
+    // }, logger);
+
+    // This is working version.
     await salesforce.query(
       `${selectQuery} ${whereClause} ${orderByClause}`,
-      record => {
+      async record => {
         logger.debug({ data: { record } }, 'Record');
 
-        postgres.upsert(
+        await postgres.upsert(
           schemaName,
           tableName,
           [
@@ -76,21 +133,68 @@ module.exports = async rawLogger => {
           logger
         );
       },
-      record => {
+      async record => {
         logger.info(
           { data: { record } },
           `Save for last sync timestamp ${salesforceObjectName}`
         );
-        dbConfig.set(
+        await dbConfig.set(
           `last-sync-timestamp-${salesforceObjectName}`,
           record.LastModifiedDate,
           logger
         );
       },
-      () => {
+      async () => {
         logger.info(`Completed query for ${salesforceObjectName}`);
       },
       logger
     );
+
+    // await new Promise((resolve, reject) => {
+    //   salesforce.queryV2(
+    //     `${selectQuery} ${whereClause} ${orderByClause}`,
+    //     async record => {
+    //       logger.debug({ data: { record } }, 'Record');
+
+    //       await postgres.upsert(
+    //         schemaName,
+    //         tableName,
+    //         [
+    //           '_sync_update_timestamp',
+    //           '_sync_status',
+    //           '_sync_message',
+    //           ...columns
+    //         ],
+    //         [
+    //           syncUpdateTimestamp,
+    //           'SYNCED',
+    //           '',
+    //           ...Object.keys(record).reduce((acc, k) => {
+    //             if (columns.includes(k.toLowerCase())) {
+    //               acc.push(record[k]);
+    //             }
+    //             return acc;
+    //           }, [])
+    //         ],
+    //         'id',
+    //         logger
+    //       );
+    //     },
+    //     err => {
+    //       logger.error(
+    //         { err },
+    //         `Error in Salesforce object bulk query for ${salesforceObjectName}`
+    //       );
+
+    //       reject();
+    //     },
+    //     () => {
+    //       logger.info(`Completed query for ${salesforceObjectName}`);
+
+    //       resolve();
+    //     },
+    //     logger
+    //   );
+    // }, logger);
   }
 };

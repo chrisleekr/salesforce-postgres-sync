@@ -72,24 +72,64 @@ const bulkQuery = async (query, onRecord, onError, onEnd, rawLogger) => {
     .on('end', onEnd);
 };
 
+const bulkQueryV2 = async (
+  salesforceObjectName,
+  query,
+  onRecord,
+  onError,
+  onEnd,
+  rawLogger
+) => {
+  await checkLimit(rawLogger);
+  const logger = rawLogger.child({ helper: 'salesforce' });
+
+  logger.info({ data: { query } }, 'Starting bulk query');
+
+  const job = salesforceConn.bulk.createJob(salesforceObjectName, query);
+  const batch = job.createBatch();
+  batch.execute(query);
+
+  let totalRecords = 0;
+  let processedRecords = 0;
+  batch.on('queue', batchInfo => {
+    logger.info({ data: { batchInfo } }, 'Batch queued');
+    totalRecords = batchInfo.totalSize;
+    batch.poll(1000, 20000);
+  });
+
+  batch.on('response', records => {
+    processedRecords += records.length;
+    records.map(record => onRecord(record));
+    if (processedRecords >= totalRecords) {
+      onEnd();
+    }
+  });
+
+  batch.on('error', err => onError(err));
+};
+
 const query = async (soqlQuery, onRecord, onBatch, onEnd, rawLogger) => {
   await checkLimit(rawLogger);
   const logger = rawLogger.child({ helper: 'salesforce' });
 
   logger.info({ data: { soqlQuery } }, 'Starting query');
 
-  let totalRecords = 0;
+  let totalProcessed = 0;
   let response = await salesforceConn.query(soqlQuery, {
     autoFetch: true,
-    maxFetch: 2000
+    maxFetch: 10000, // 1000 is max
+    scanAll: true
   });
   let batchCount = 1;
 
+  const { totalSize } = response;
   let { records } = response;
+
   logger.info(
     {
       data: {
         batchCount,
+        totalSize,
         recordsLength: records.length,
         nextRecordsUrl: response.nextRecordsUrl
       }
@@ -99,18 +139,27 @@ const query = async (soqlQuery, onRecord, onBatch, onEnd, rawLogger) => {
   batchCount += 1;
 
   // Loop records and execute onRecord with record
-  records.forEach(record => onRecord(record));
 
-  totalRecords += records.length;
+  await Promise.all(records.map(record => onRecord(record)));
+
+  totalProcessed += records.length;
+
+  logger.info(`Total processed records: ${totalProcessed}/${totalSize}`);
 
   while (!response.done) {
     await checkLimit(rawLogger);
+
+    logger.info(
+      { data: { nextRecordsUrl: response.nextRecordsUrl } },
+      'Starting query more'
+    );
     response = await salesforceConn.queryMore(response.nextRecordsUrl);
     records = response.records;
 
     logger.info(
       {
         data: {
+          totalSize,
           batchCount,
           recordsLength: records.length,
           nextRecordsUrl: response.nextRecordsUrl
@@ -122,17 +171,38 @@ const query = async (soqlQuery, onRecord, onBatch, onEnd, rawLogger) => {
     );
 
     // Loop records and execute onRecord with record
-    records.forEach(record => onRecord(record));
+    await Promise.all(records.map(record => onRecord(record)));
 
     batchCount += 1;
-    totalRecords += records.length;
+    totalProcessed += records.length;
 
     // Pass last records to onBatch
-    onBatch(records[records.length - 1]);
-  }
-  logger.info(`Total records: ${totalRecords}`);
+    await onBatch(records[records.length - 1]);
 
-  onEnd();
+    logger.info(`Total processed records: ${totalProcessed}/${totalSize}`);
+  }
+
+  await onEnd();
+};
+
+const queryV2 = async (soqlQuery, onRecord, onError, onEnd, rawLogger) => {
+  await checkLimit(rawLogger);
+  const logger = rawLogger.child({ helper: 'salesforce' });
+
+  logger.info({ data: { soqlQuery } }, 'Starting queryV2');
+
+  salesforceConn
+    .query(soqlQuery)
+    .on('record', record => {
+      onRecord(record);
+    })
+    .on('end', () => {
+      onEnd();
+    })
+    .on('error', err => {
+      onError(err);
+    })
+    .run({ autoFetch: true, maxFetch: 10000, scanAll: true });
 };
 
 const create = async (objectName, record, onError, onEnd, rawLogger) => {
@@ -193,7 +263,9 @@ module.exports = {
   login,
   describe,
   bulkQuery,
+  bulkQueryV2,
   query,
+  queryV2,
   create,
   update
 };
