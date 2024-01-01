@@ -1,4 +1,3 @@
-/* eslint-disable no-loop-func */
 const config = require('config');
 const moment = require('moment');
 const salesforce = require('../helpers/salesforce');
@@ -27,6 +26,8 @@ module.exports = async rawLogger => {
       `last-sync-timestamp-${salesforceObjectName}`,
       logger
     );
+
+    // Set sync datetime
     const syncUpdateTimestamp = moment.utc().format();
 
     const selectQuery = `SELECT ${columns.join(
@@ -36,13 +37,14 @@ module.exports = async rawLogger => {
     let whereClause = '';
     let orderByClause = '';
 
-    // If lastSyncTimestamp is null, then do not add LastModifiedDate>${lastSyncTimestamp}
+    // If lastSyncTimestamp is not null, then full/partial sync has been done.
+    // If lastSyncTimestamp is null, then do not add LastModifiedDate>${lastSyncTimestamp}. It's clean copy.
     if (lastSyncTimestamp) {
       whereClause = ` WHERE LastModifiedDate > ${lastSyncTimestamp}`;
       orderByClause = ' ORDER BY LastModifiedDate ASC';
     } else {
       whereClause = '';
-      orderByClause = ' ORDER BY CreatedDate ASC';
+      orderByClause = ' ORDER BY LastModifiedDate ASC';
     }
 
     await new Promise(resolve => {
@@ -54,10 +56,16 @@ module.exports = async rawLogger => {
           postgres.upsert(
             schemaName,
             tableName,
-            ['sync_update_timestamp', 'sync_status', ...columns],
+            [
+              '_sync_update_timestamp',
+              '_sync_status',
+              '_sync_message',
+              ...columns
+            ],
             [
               syncUpdateTimestamp,
               'SYNCED',
+              '',
               ...Object.keys(record).reduce((acc, k) => {
                 if (columns.includes(k.toLowerCase())) {
                   acc.push(record[k]);
@@ -69,7 +77,17 @@ module.exports = async rawLogger => {
             logger
           );
         },
-
+        record => {
+          logger.info(
+            { data: { record } },
+            `Save for last sync timestamp ${salesforceObjectName}`
+          );
+          dbConfig.set(
+            `last-sync-timestamp-${salesforceObjectName}`,
+            record.LastModifiedDate,
+            logger
+          );
+        },
         () => {
           logger.info(`Completed query for ${salesforceObjectName}`);
           resolve();
@@ -77,11 +95,5 @@ module.exports = async rawLogger => {
         logger
       );
     }, logger);
-
-    await dbConfig.set(
-      `last-sync-timestamp-${salesforceObjectName}`,
-      syncUpdateTimestamp,
-      logger
-    );
   }
 };

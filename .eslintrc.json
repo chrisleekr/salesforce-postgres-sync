@@ -7,7 +7,8 @@
     "max-len": ["error", { "code": 120 }],
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
     "no-await-in-loop": "off",
-    "no-restricted-syntax": ["off", "ForOfStatement"]
+    "no-restricted-syntax": ["off", "ForOfStatement"],
+    "no-underscore-dangle": "off"
   },
   "settings": {
     "react": {

@@ -309,9 +309,56 @@ const select = async (
   return readonlyConn.query(selectQuery);
 };
 
+const update = async (
+  schemaName,
+  tableName,
+  values,
+  id,
+  idColumn,
+  rawLogger
+) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'update',
+    tableName
+  });
+
+  const columnValues = [];
+
+  const updateQuery = `
+    UPDATE ${schemaName}.${tableName}
+    SET ${Object.keys(values)
+      .map((column, index) => {
+        columnValues.push(values[column]);
+        return `${column} = $${index + 1}`;
+      })
+      .join(',')}
+    WHERE ${idColumn} = ${id}
+  `;
+
+  logger.debug(
+    {
+      data: { updateQuery, schemaName, tableName, values, id, idColumn }
+    },
+    `Update ${tableName}`
+  );
+
+  return readwriteConn.query(updateQuery, columnValues).catch(err => {
+    logger.error(
+      {
+        err,
+        data: { updateQuery, schemaName, tableName, values, id, idColumn }
+      },
+      `Error in update ${tableName}`
+    );
+    throw err;
+  });
+};
+
 module.exports = {
   createSchemaIfNotExists,
   createOrUpdateTable,
   upsert,
-  select
+  select,
+  update
 };

@@ -19,6 +19,7 @@
     "bbands",
     "Bollinger",
     "chrisleekr",
+    "createable",
     "jsforce",
     "MACD",
     "Modstamp",
@@ -28,6 +29,7 @@
     "sobject",
     "soql",
     "tulind",
+    "updateable",
     "varchar"
   ],
   "eslint.format.enable": true,

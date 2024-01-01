@@ -6,22 +6,26 @@
     "securityToken": "",
     "commonFields": [
       {
-        "name": "sync_id",
+        "name": "_sync_id",
         "type": "integer",
         "notNull": true,
         "primaryKey": true,
         "defaultSequence": true
       },
       {
-        "name": "sync_update_timestamp",
+        "name": "_sync_update_timestamp",
         "type": "timestamp",
         "createIndex": true
       },
       {
-        "name": "sync_status",
+        "name": "_sync_status",
         "type": "varchar(30)",
         "description": "TODO enum SYNCED|ERROR|PENDING, just string for now",
         "createIndex": true
+      },
+      {
+        "name": "_sync_message",
+        "type": "text"
       },
       {
         "name": "Id",

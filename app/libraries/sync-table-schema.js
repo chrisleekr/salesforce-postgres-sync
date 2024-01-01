@@ -1,6 +1,7 @@
 const config = require('config');
 const salesforce = require('../helpers/salesforce');
 const postgres = require('../helpers/postgres');
+const dbConfig = require('../helpers/db-config');
 
 // Function to convert Salesforce field types to PostgreSQL column types
 const convertType = sfType => {
@@ -44,17 +45,21 @@ module.exports = async rawLogger => {
   // Get the keys of the salesforceObjects object
   const salesforceObjectNames = Object.keys(salesforceObjects);
 
-  // Loop salesforceObjectNames sequentially
+  // Loop salesforceObjectNames sequentially to avoid excessive API call.
   for (const salesforceObjectName of salesforceObjectNames) {
     const salesforceObjectFields =
       salesforceObjects[salesforceObjectName].fields;
 
+    // Retreive the salesforceObject information
     const salesforceObject = await salesforce.describe(
       salesforceObjectName,
       logger
     );
 
     const objectFields = [];
+    const createableFields = [];
+    const updateableFields = [];
+
     // Loop all salesforceObject fields to get objectFields
     salesforceObject.fields.forEach(field => {
       const objectField = {
@@ -72,6 +77,16 @@ module.exports = async rawLogger => {
           .includes(field.name.toLowerCase())
       ) {
         objectFields.push(objectField);
+      }
+
+      // If the field is creatable, then push to createableFields.
+      if (field.createable) {
+        createableFields.push(field.name);
+      }
+
+      // If the field is updateable, then push to updateableFields.
+      if (field.updateable) {
+        updateableFields.push(field.name);
       }
     });
 
@@ -98,6 +113,28 @@ module.exports = async rawLogger => {
       postgresSchema,
       salesforceObjectName.toLowerCase(),
       uniqueTableSchema,
+      logger
+    );
+
+    logger.info(
+      {
+        data: { createableFields }
+      },
+      `Updating createable fields for ${salesforceObjectName}`
+    );
+    await dbConfig.set(
+      `createable-fields-${salesforceObjectName}`,
+      JSON.stringify(createableFields),
+      logger
+    );
+
+    logger.info(
+      { data: { updateableFields } },
+      `Updating updatable fields for ${salesforceObjectName}`
+    );
+    await dbConfig.set(
+      `updateable-fields-${salesforceObjectName}`,
+      JSON.stringify(updateableFields),
       logger
     );
   }

@@ -4,6 +4,7 @@ const createSchema = require('./libraries/create-schema');
 const initialSetup = require('./libraries/initial-setup');
 const syncTableSchema = require('./libraries/sync-table-schema');
 const salesforceToPostgres = require('./libraries/salesforce-to-postgres');
+const postgresToSalesforce = require('./libraries/postgres-to-salesforce');
 
 (async () => {
   logger.info('Starting Salesforce Postgres Sync');
@@ -22,4 +23,7 @@ const salesforceToPostgres = require('./libraries/salesforce-to-postgres');
 
   // Sync Salesforce to Postgres
   await salesforceToPostgres(logger);
+
+  // Sync Postgres to Salesforce
+  await postgresToSalesforce(logger);
 })();
