@@ -47,53 +47,50 @@ module.exports = async rawLogger => {
       orderByClause = ' ORDER BY LastModifiedDate ASC';
     }
 
-    await new Promise(resolve => {
-      salesforce.query(
-        `${selectQuery} ${whereClause} ${orderByClause}`,
-        record => {
-          logger.debug({ data: { record } }, 'Record');
+    await salesforce.query(
+      `${selectQuery} ${whereClause} ${orderByClause}`,
+      record => {
+        logger.debug({ data: { record } }, 'Record');
 
-          postgres.upsert(
-            schemaName,
-            tableName,
-            [
-              '_sync_update_timestamp',
-              '_sync_status',
-              '_sync_message',
-              ...columns
-            ],
-            [
-              syncUpdateTimestamp,
-              'SYNCED',
-              '',
-              ...Object.keys(record).reduce((acc, k) => {
-                if (columns.includes(k.toLowerCase())) {
-                  acc.push(record[k]);
-                }
-                return acc;
-              }, [])
-            ],
-            'id',
-            logger
-          );
-        },
-        record => {
-          logger.info(
-            { data: { record } },
-            `Save for last sync timestamp ${salesforceObjectName}`
-          );
-          dbConfig.set(
-            `last-sync-timestamp-${salesforceObjectName}`,
-            record.LastModifiedDate,
-            logger
-          );
-        },
-        () => {
-          logger.info(`Completed query for ${salesforceObjectName}`);
-          resolve();
-        },
-        logger
-      );
-    }, logger);
+        postgres.upsert(
+          schemaName,
+          tableName,
+          [
+            '_sync_update_timestamp',
+            '_sync_status',
+            '_sync_message',
+            ...columns
+          ],
+          [
+            syncUpdateTimestamp,
+            'SYNCED',
+            '',
+            ...Object.keys(record).reduce((acc, k) => {
+              if (columns.includes(k.toLowerCase())) {
+                acc.push(record[k]);
+              }
+              return acc;
+            }, [])
+          ],
+          'id',
+          logger
+        );
+      },
+      record => {
+        logger.info(
+          { data: { record } },
+          `Save for last sync timestamp ${salesforceObjectName}`
+        );
+        dbConfig.set(
+          `last-sync-timestamp-${salesforceObjectName}`,
+          record.LastModifiedDate,
+          logger
+        );
+      },
+      () => {
+        logger.info(`Completed query for ${salesforceObjectName}`);
+      },
+      logger
+    );
   }
 };
