@@ -1,17 +1,18 @@
 const config = require('config');
-const { Client } = require('pg');
+const { Pool } = require('pg');
 
-const readwriteConn = new Client({
+const readwriteConn = new Pool({
   host: config.get('postgres.readwrite.host'),
   port: config.get('postgres.readwrite.port'),
   user: config.get('postgres.readwrite.user'),
   password: config.get('postgres.readwrite.password'),
-  database: config.get('postgres.readwrite.database')
+  database: config.get('postgres.readwrite.database'),
+  max: 20
 });
 
 readwriteConn.connect();
 
-const readonlyConn = new Client({
+const readonlyConn = new Pool({
   host: config.get('postgres.readonly.host'),
   port: config.get('postgres.readonly.port'),
   user: config.get('postgres.readonly.user'),
@@ -188,14 +189,14 @@ const createOrUpdateTable = async (
         `SELECT trigger_name FROM information_schema.triggers ` +
         `WHERE event_object_schema = '${schemaName}' ` +
         `AND event_object_table = '${tableName}' AND trigger_name = '${triggerName}'`;
-      const triggerResult = await readonlyConn.query(selectTriggerQuery);
+      const triggerResult = await readwriteConn.query(selectTriggerQuery);
 
       // Create trigger if not exists
       if (triggerResult.rows.length === 0) {
         const triggerQuery =
           `CREATE TRIGGER ${triggerName} ` +
           `BEFORE INSERT OR UPDATE ON ${schemaName}.${tableName} ` +
-          `FOR EACH ROW EXECUTE PROCEDURE ${triggerFunctionName}()`;
+          `FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.${triggerFunctionName}()`;
         await readwriteConn.query(triggerQuery);
         logger.info(`Created trigger if not exists ${triggerName}`);
       }
@@ -355,10 +356,42 @@ const update = async (
   });
 };
 
+const deleteRow = async (schemaName, tableName, idColumn, id, rawLogger) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'deleteRow',
+    tableName
+  });
+
+  const deleteQuery = `
+    DELETE FROM ${schemaName}.${tableName}
+    WHERE ${idColumn} = $1
+  `;
+
+  logger.debug(
+    {
+      data: { deleteQuery, schemaName, tableName, idColumn, id }
+    },
+    `Delete ${tableName}`
+  );
+
+  return readwriteConn.query(deleteQuery, [id]).catch(err => {
+    logger.error(
+      {
+        err,
+        data: { deleteQuery, schemaName, tableName, idColumn, id }
+      },
+      `Error in delete ${tableName}`
+    );
+    throw err;
+  });
+};
+
 module.exports = {
   createSchemaIfNotExists,
   createOrUpdateTable,
   upsert,
   select,
-  update
+  update,
+  deleteRow
 };

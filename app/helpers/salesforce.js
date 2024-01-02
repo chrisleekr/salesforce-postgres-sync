@@ -1,3 +1,5 @@
+const fs = require('fs');
+const csv = require('csv-parser');
 const config = require('config');
 const jsforce = require('jsforce');
 
@@ -10,22 +12,29 @@ const salesforceConn = new jsforce.Connection({
       : 'https://test.salesforce.com'
 });
 
-salesforceConn.bulk.pollTimeout = 60000; // 60 seconds
+salesforceConn.bulk.pollTimeout = 3600000; // 1 hour
 
 const checkLimit = async rawLogger => {
   const logger = rawLogger.child({ helper: 'salesforce', func: 'checkLimit' });
   logger.info({ apiUsage: salesforceConn.limitInfo.apiUsage }, 'API Usage');
 };
 
-const getSalesforceColumns = salesforceObjectFields => {
+const getSalesforceColumns = (salesforceObjectName, salesforceObjectFields) => {
   const salesforceCommonFields = config
     .get('salesforce.commonFields')
     .filter(field => field.sfColumn)
     .map(field => field.name);
 
-  return [...salesforceCommonFields, ...salesforceObjectFields].map(field =>
-    field.toLowerCase()
-  );
+  let combinedFields = [...salesforceCommonFields, ...salesforceObjectFields];
+
+  if (salesforceObjectName.toLowerCase() === 'user') {
+    const excludeFields = ['IsDeleted'];
+    combinedFields = combinedFields.filter(
+      field => !excludeFields.includes(field)
+    );
+  }
+
+  return combinedFields.map(field => field.toLowerCase());
 };
 
 const login = async rawLogger => {
@@ -75,37 +84,124 @@ const bulkQuery = async (query, onRecord, onError, onEnd, rawLogger) => {
 const bulkQueryV2 = async (
   salesforceObjectName,
   query,
+  lastBulkJob,
+  onQueue,
   onRecord,
   onError,
   onEnd,
   rawLogger
 ) => {
   await checkLimit(rawLogger);
-  const logger = rawLogger.child({ helper: 'salesforce' });
+  const logger = rawLogger.child({
+    helper: 'salesforce',
+    salesforceObjectName,
+    lastBulkJob
+  });
 
   logger.info({ data: { query } }, 'Starting bulk query');
 
-  const job = salesforceConn.bulk.createJob(salesforceObjectName, query);
-  const batch = job.createBatch();
-  batch.execute(query);
+  let job;
+  let batch;
+
+  let queuedBatchInfo;
+
+  // If last bulk job id is provided, the retrieve job
+  if (lastBulkJob.jobId) {
+    job = salesforceConn.bulk.job(lastBulkJob.jobId);
+    batch = job.batch(lastBulkJob.id);
+    job.operation = 'queryAll'; // Workaround to make sure it's polling for queryAll
+    batch.poll(1000, 3600000);
+    queuedBatchInfo = lastBulkJob;
+  } else {
+    job = salesforceConn.bulk.createJob(salesforceObjectName, 'queryAll');
+    batch = job.createBatch();
+    batch.execute(query);
+  }
 
   let totalRecords = 0;
   let processedRecords = 0;
   batch.on('queue', batchInfo => {
     logger.info({ data: { batchInfo } }, 'Batch queued');
+    queuedBatchInfo = batchInfo;
     totalRecords = batchInfo.totalSize;
-    batch.poll(1000, 20000);
+    batch.poll(1000, 3600000);
+    onQueue(batchInfo);
   });
 
-  batch.on('response', records => {
-    processedRecords += records.length;
-    records.map(record => onRecord(record));
-    if (processedRecords >= totalRecords) {
-      onEnd();
-    }
+  batch.on('progress', batchInfo => {
+    logger.info({ data: { batchInfo } }, 'Batch progress');
   });
 
   batch.on('error', err => onError(err));
+
+  batch.on('response', results => {
+    // Loop results and save to CSV file
+    // Wait until all streams are completed
+
+    // const promises = results.map(result => {
+    //   const resultId = result.id;
+    //   const writeStream = fs.createWriteStream(`/tmp/${result.id}.csv`);
+    //   const readStream = batch.result(resultId).stream();
+
+    //   readStream.pipe(writeStream);
+
+    //   return new Promise((resolve, reject) => {
+    //     readStream.on('end', err => {
+    //       if (err) {
+    //         reject(err);
+    //       } else {
+    //         resolve();
+    //       }
+    //     });
+    //   });
+    // });
+
+    // Promise.all(promises)
+    //   .then(() => console.log('All streams have ended'))
+    //   .catch(err => console.error('An error occurred:', err));
+
+    results.forEach(result => {
+      // Save to the CSV file in /tmp folders
+      batch
+        .result(result.id)
+        .stream()
+        .pipe(fs.createWriteStream(`/tmp/${result.id}.csv`))
+        .on('end', () => {
+          logger.info({ data: { result } }, 'End of result stream');
+        });
+      const records = [];
+      batch
+        .result(result.id)
+        .stream()
+        .pipe(csv())
+        .on('data', async record => {
+          logger.info({ data: { record } }, 'Record');
+          records.push(record);
+          // await onRecord(record);
+          // processedRecords += 1;
+        })
+        .on('end', async () => {
+          await onRecord(records);
+          processedRecords += records.length;
+          logger.info(
+            { data: { result } },
+            'End of result stream, checking if all records are processed'
+          );
+          if (processedRecords >= totalRecords) {
+            logger.info(
+              { processedRecords, totalRecords, data: { result } },
+              'All records are processed, ending bulk query'
+            );
+            await onEnd(queuedBatchInfo);
+          } else {
+            logger.info(
+              { processedRecords, totalRecords, data: { result } },
+              'All records are not processed, waiting for next batch'
+            );
+          }
+        });
+    });
+  });
 };
 
 const query = async (soqlQuery, onRecord, onBatch, onEnd, rawLogger) => {
@@ -117,8 +213,7 @@ const query = async (soqlQuery, onRecord, onBatch, onEnd, rawLogger) => {
   let totalProcessed = 0;
   let response = await salesforceConn.query(soqlQuery, {
     autoFetch: true,
-    maxFetch: 10000, // 1000 is max
-    scanAll: true
+    maxFetch: 1000 // 1000 is max
   });
   let batchCount = 1;
 
@@ -182,7 +277,7 @@ const query = async (soqlQuery, onRecord, onBatch, onEnd, rawLogger) => {
     logger.info(`Total processed records: ${totalProcessed}/${totalSize}`);
   }
 
-  await onEnd();
+  await onEnd(records[records.length - 1]);
 };
 
 const queryV2 = async (soqlQuery, onRecord, onError, onEnd, rawLogger) => {

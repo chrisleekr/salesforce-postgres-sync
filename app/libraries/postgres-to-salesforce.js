@@ -41,10 +41,18 @@ module.exports = async rawLogger => {
       logger
     );
 
+    logger.info(
+      `Starting to sync postgres ${pendingRecords.rows.length} records to Salesforce`
+    );
+
     // Loop pendingRecords sequentially to avoid excessive API call.
     for (const pendingRecord of pendingRecords.rows) {
       // if pendingRecord.id is empty, then it is new record.
       if (!pendingRecord.id) {
+        logger.info(
+          { data: { pendingRecord } },
+          `Creating new record in Salesforce`
+        );
         // Construct salesforce record only the updateable fields
         const salesforceRecord = {};
         Object.keys(pendingRecord).forEach(fieldKey => {
@@ -106,6 +114,10 @@ module.exports = async rawLogger => {
           logger
         );
       } else {
+        logger.info(
+          { data: { pendingRecord } },
+          `Updating an existing record in Salesforce`
+        );
         // Construct salesforce record only the updateable fields
         const salesforceRecord = {};
         Object.keys(pendingRecord).forEach(fieldKey => {
@@ -117,7 +129,30 @@ module.exports = async rawLogger => {
 
         await salesforce.update(
           salesforceObjectName,
-          salesforceRecord,
+          {
+            Id: pendingRecord.id,
+            ...salesforceRecord
+          },
+          (record, err) => {
+            logger.error(
+              { err, data: { record } },
+              'Error in Salesforce object create'
+            );
+
+            // Update _sync_status to 'ERROR'
+            postgres.update(
+              schemaName,
+              tableName,
+              {
+                _sync_update_timestamp: syncUpdateTimestamp,
+                _sync_status: 'ERROR',
+                _sync_message: err.message
+              },
+              pendingRecord._sync_id,
+              '_sync_id',
+              logger
+            );
+          },
           (record, result) => {
             logger.debug(
               { data: { record, result } },
@@ -144,29 +179,13 @@ module.exports = async rawLogger => {
               'Completed to update an existing record in Salesforce'
             );
           },
-          (record, err) => {
-            logger.error(
-              { err, data: { record } },
-              'Error in Salesforce object create'
-            );
-
-            // Update _sync_status to 'ERROR'
-            postgres.update(
-              schemaName,
-              tableName,
-              {
-                _sync_update_timestamp: syncUpdateTimestamp,
-                _sync_status: 'ERROR',
-                _sync_message: err.message
-              },
-              pendingRecord._sync_id,
-              '_sync_id',
-              logger
-            );
-          },
           logger
         );
       }
     }
+
+    logger.info(
+      `Completed to sync postgres ${pendingRecords.rows.length} records to Salesforce`
+    );
   }
 };

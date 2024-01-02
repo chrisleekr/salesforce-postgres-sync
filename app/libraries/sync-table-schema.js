@@ -8,7 +8,7 @@ const convertType = sfType => {
   switch (sfType) {
     case 'id':
     case 'reference':
-      return 'varchar(18)';
+      return 'varchar(20)';
     case 'string':
     case 'textarea':
     case 'picklist':

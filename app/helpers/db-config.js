@@ -37,7 +37,16 @@ const set = async (key, value, rawLogger) => {
   );
 };
 
+const deleteKey = async (key, rawLogger) => {
+  const logger = rawLogger.child({ helper: 'config', func: 'deleteKey' });
+
+  const postgresSchema = config.get('salesforce.postgresSchema');
+
+  return postgres.deleteRow(postgresSchema, '_config', 'key', key, logger);
+};
+
 module.exports = {
   get,
-  set
+  set,
+  deleteKey
 };
