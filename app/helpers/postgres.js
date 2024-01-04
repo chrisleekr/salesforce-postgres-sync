@@ -1,5 +1,7 @@
+const fs = require('fs');
 const config = require('config');
 const { Pool } = require('pg');
+const copyFrom = require('pg-copy-streams').from;
 
 const readwriteConn = new Pool({
   host: config.get('postgres.readwrite.host'),
@@ -10,8 +12,6 @@ const readwriteConn = new Pool({
   max: 20
 });
 
-readwriteConn.connect();
-
 const readonlyConn = new Pool({
   host: config.get('postgres.readonly.host'),
   port: config.get('postgres.readonly.port'),
@@ -20,7 +20,21 @@ const readonlyConn = new Pool({
   database: config.get('postgres.readonly.database')
 });
 
-readonlyConn.connect();
+let readwriteClient;
+// eslint-disable-next-line no-unused-vars
+let readonlyClient;
+
+const connect = async rawLogger => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'connect'
+  });
+
+  readwriteClient = await readwriteConn.connect();
+  readonlyClient = await readonlyConn.connect();
+
+  logger.info('Connected to postgres');
+};
 
 const createSchemaIfNotExists = async (schemaName, rawLogger) => {
   const logger = rawLogger.child({
@@ -387,11 +401,108 @@ const deleteRow = async (schemaName, tableName, idColumn, id, rawLogger) => {
   });
 };
 
+const truncate = async (schemaName, tableName, rawLogger) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'truncate',
+    tableName
+  });
+
+  const truncateQuery = `
+    TRUNCATE TABLE ${schemaName}.${tableName}
+  `;
+
+  logger.debug(
+    {
+      data: { truncateQuery, schemaName, tableName }
+    },
+    `Truncate table ${schemaName}.${tableName}`
+  );
+
+  return readwriteConn.query(truncateQuery).catch(err => {
+    logger.error(
+      {
+        err,
+        data: { truncateQuery, schemaName, tableName }
+      },
+      `Error in truncate table ${schemaName}.${tableName}`
+    );
+    throw err;
+  });
+};
+
+const loadCSVToTable = async (
+  schemaName,
+  tableName,
+  csvPath,
+  delimiter,
+  rawLogger
+) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'loadCSVToTable',
+    csvPath,
+    tableName,
+    delimiter
+  });
+
+  logger.info(`Loading CSV file to ${schemaName}.${tableName}`);
+
+  await new Promise((resolve, reject) => {
+    // Get headers from CSV
+    const headers = fs
+      .readFileSync(csvPath, 'utf8')
+      .split('\n')
+      .shift()
+      .split(delimiter);
+
+    // Begin the COPY operation
+    const ingestStream = readwriteClient.query(
+      copyFrom(
+        `COPY ${schemaName}.${tableName} ( ${headers.join(
+          ','
+        )}) FROM STDIN DELIMITER '${delimiter}' CSV HEADER`
+      )
+    );
+
+    const sourceStream = fs.createReadStream(csvPath);
+
+    // Log progress
+    let progress = 0;
+    sourceStream.on('data', chunk => {
+      progress += chunk.length;
+      logger.info(
+        `Progress: ${Math.round((progress / 1024 / 1024) * 100) / 100}MB`
+      );
+    });
+
+    sourceStream.on('error', error => {
+      logger.error(`Error in READ CSV operation: ${error}`);
+      reject(error);
+    });
+
+    ingestStream.on('error', error => {
+      logger.error(`Error in COPY operation: ${error}`);
+      reject(error);
+    });
+
+    ingestStream.on('finish', resolve);
+
+    // Pipe the CSV data to the COPY stream
+    sourceStream.pipe(ingestStream);
+  });
+
+  logger.info(`Completed loading CSV file to ${schemaName}.${tableName}`);
+};
+
 module.exports = {
+  connect,
   createSchemaIfNotExists,
   createOrUpdateTable,
   upsert,
   select,
   update,
-  deleteRow
+  deleteRow,
+  truncate,
+  loadCSVToTable
 };

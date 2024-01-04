@@ -29,6 +29,8 @@ const convertType = sfType => {
       return 'date';
     case 'datetime':
       return 'timestamp';
+    case 'email':
+      return 'varchar(255)';
     default:
       return sfType;
   }
@@ -50,35 +52,55 @@ module.exports = async rawLogger => {
     const salesforceObjectFields =
       salesforceObjects[salesforceObjectName].fields;
 
-    // Retreive the salesforceObject information
+    // Retrieve the salesforceObject information
     const salesforceObject = await salesforce.describe(
       salesforceObjectName,
       logger
     );
 
+    // logger.debug({ data: { salesforceObject } }, 'Salesforce object describe');
+
     const objectFields = [];
     const createableFields = [];
     const updateableFields = [];
 
-    // Loop all salesforceObject fields to get objectFields
-    salesforceObject.fields.forEach(field => {
-      const objectField = {
-        label: field.label,
-        name: field.name,
-        type: field.type,
-        createIndex:
-          field.unique || field.idLookup || field.filterable || field.sortable
-      };
+    // Loop salesforceObjectFields and check whether it's in salesforceObject.fields.
+    // If not exists, then throw error.
 
-      // If the field.name is in the salesforceObjectFields array, then push to objectFields.
-      if (
-        salesforceObjectFields
-          .map(objField => objField.toLowerCase())
-          .includes(field.name.toLowerCase())
-      ) {
-        objectFields.push(objectField);
+    salesforceObjectFields.forEach(fieldName => {
+      // Find field from salesforceObject.field
+      const foundField = salesforceObject.fields.find(
+        field => field.name.toLowerCase() === fieldName.toLowerCase()
+      );
+
+      if (!foundField) {
+        logger.error(
+          {
+            data: { fieldName, salesforceObjectFields }
+          },
+          `Field ${fieldName} not found in ${salesforceObjectName}`
+        );
+        throw new Error(
+          `Field ${fieldName} not found in ${salesforceObjectName}`
+        );
       }
 
+      const objectField = {
+        label: foundField.label,
+        name: foundField.name,
+        type: foundField.type,
+        createIndex:
+          foundField.unique ||
+          foundField.idLookup ||
+          foundField.filterable ||
+          foundField.sortable
+      };
+
+      objectFields.push(objectField);
+    });
+
+    // Loop all salesforceObject fields to get objectFields
+    salesforceObject.fields.forEach(field => {
       // If the field is creatable, then push to createableFields.
       if (field.createable) {
         createableFields.push(field.name);
@@ -91,13 +113,20 @@ module.exports = async rawLogger => {
     });
 
     // Construct the table schema
-    const tableSchema = [...salesforceCommonFields, ...objectFields].map(
+    let tableSchema = [...salesforceCommonFields, ...objectFields].map(
       schema => ({
         ...schema,
         name: schema.name.toLowerCase(),
         type: convertType(schema.type)
       })
     );
+
+    if (salesforceObjectName.toLowerCase() === 'user') {
+      const excludeFields = ['isdeleted'];
+      tableSchema = tableSchema.filter(
+        field => !excludeFields.includes(field.name)
+      );
+    }
 
     // Make tableSchema unique by name of the schema
     const uniqueTableSchema = tableSchema.reduce((acc, current) => {

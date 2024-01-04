@@ -3,6 +3,7 @@ const moment = require('moment');
 const salesforce = require('../helpers/salesforce');
 const postgres = require('../helpers/postgres');
 const dbConfig = require('../helpers/db-config');
+const csv = require('../helpers/csv');
 
 module.exports = async rawLogger => {
   const logger = rawLogger.child({ library: 'salesforce-to-postgres' });
@@ -20,6 +21,11 @@ module.exports = async rawLogger => {
     const columns = salesforce.getSalesforceColumns(
       salesforceObjectName,
       salesforceObjects[salesforceObjectName].fields
+    );
+
+    logger.info(
+      { data: { salesforceObjectName, columns } },
+      'Constructed columns'
     );
 
     // Construct SELECT query for salesforce with fields
@@ -108,7 +114,7 @@ module.exports = async rawLogger => {
         ) || {};
 
       await new Promise((resolve, reject) => {
-        salesforce.bulkQueryV2(
+        salesforce.bulkQueryToCSV(
           salesforceObjectName,
           `SELECT ${columns.join(
             ','
@@ -121,41 +127,6 @@ module.exports = async rawLogger => {
               logger
             );
           },
-          async records => {
-            // Convert all keys in records to lowercase
-            // const recordLowercase = {};
-            // Object.keys(record).forEach(k => {
-            //   recordLowercase[k.toLowerCase()] = record[k];
-            // });
-
-            console.log(JSON.stringify(records));
-            // Insert/Update record to postgres
-
-            // await postgres.bulkUpsert(
-            //   schemaName,
-            //   tableName,
-            //   [
-            //     '_sync_update_timestamp',
-            //     '_sync_status',
-            //     '_sync_message',
-            //     ...columns
-            //   ],
-            //   [
-            //     syncUpdateTimestamp,
-            //     'SYNCED',
-            //     '',
-            //     ...Object.values(record)
-            //     // ...columns.reduce((acc, k) => {
-            //     //   if (recordLowercase[k]) {
-            //     //     acc.push(recordLowercase[k]);
-            //     //   }
-            //     //   return acc;
-            //     // }, [])
-            //   ],
-            //   'id',
-            //   logger
-            // );
-          },
           async err => {
             logger.error(
               { err },
@@ -164,19 +135,48 @@ module.exports = async rawLogger => {
 
             reject();
           },
-          async batchInfo => {
-            logger.info(`Completed query for ${salesforceObjectName}`);
-
-            await dbConfig.set(
-              `last-sync-timestamp-${salesforceObjectName}`,
-              batchInfo.createdDate,
-              logger
+          async (batchInfo, results) => {
+            logger.info(
+              { batchInfo, results },
+              `Completed query for ${salesforceObjectName}, importing to Postgres`
             );
 
-            await dbConfig.deleteKey(
-              `last-bulk-job-id-${salesforceObjectName}`,
-              logger
+            await postgres.truncate(schemaName, tableName, logger);
+
+            // load CSV to postgres table
+            await Promise.all(
+              results.map(async result => {
+                const orgCSVPath = `/tmp/${result.id}.csv`;
+                const convertedCSVPath = `/tmp/${result.id}-converted.csv`;
+
+                await csv.prependColumns(
+                  orgCSVPath,
+                  convertedCSVPath,
+                  ['_sync_update_timestamp', '_sync_status', '_sync_message'],
+                  [syncUpdateTimestamp, 'SYNCED', ''],
+                  logger
+                );
+
+                await postgres.loadCSVToTable(
+                  schemaName,
+                  tableName,
+                  convertedCSVPath,
+                  ',', // delimiter
+                  logger
+                );
+              })
             );
+
+            // await dbConfig.set(
+            //   `last-sync-timestamp-${salesforceObjectName}`,
+            //   batchInfo.createdDate,
+            //   logger
+            // );
+
+            // await dbConfig.deleteKey(
+            //   `last-bulk-job-id-${salesforceObjectName}`,
+            //   logger
+            // );
 
             resolve();
           },
@@ -184,52 +184,5 @@ module.exports = async rawLogger => {
         );
       }, logger);
     }
-
-    // await new Promise((resolve, reject) => {
-    //   salesforce.queryV2(
-    //     `${selectQuery} ${whereClause} ${orderByClause}`,
-    //     async record => {
-    //       logger.debug({ data: { record } }, 'Record');
-
-    //       await postgres.upsert(
-    //         schemaName,
-    //         tableName,
-    //         [
-    //           '_sync_update_timestamp',
-    //           '_sync_status',
-    //           '_sync_message',
-    //           ...columns
-    //         ],
-    //         [
-    //           syncUpdateTimestamp,
-    //           'SYNCED',
-    //           '',
-    //           ...Object.keys(record).reduce((acc, k) => {
-    //             if (columns.includes(k.toLowerCase())) {
-    //               acc.push(record[k]);
-    //             }
-    //             return acc;
-    //           }, [])
-    //         ],
-    //         'id',
-    //         logger
-    //       );
-    //     },
-    //     err => {
-    //       logger.error(
-    //         { err },
-    //         `Error in Salesforce object bulk query for ${salesforceObjectName}`
-    //       );
-
-    //       reject();
-    //     },
-    //     () => {
-    //       logger.info(`Completed query for ${salesforceObjectName}`);
-
-    //       resolve();
-    //     },
-    //     logger
-    //   );
-    // }, logger);
   }
 };

@@ -1,5 +1,4 @@
 const fs = require('fs');
-const csv = require('csv-parser');
 const config = require('config');
 const jsforce = require('jsforce');
 
@@ -25,16 +24,19 @@ const getSalesforceColumns = (salesforceObjectName, salesforceObjectFields) => {
     .filter(field => field.sfColumn)
     .map(field => field.name);
 
-  let combinedFields = [...salesforceCommonFields, ...salesforceObjectFields];
+  let combinedFields = [
+    ...salesforceCommonFields,
+    ...salesforceObjectFields
+  ].map(field => field.toLowerCase());
 
   if (salesforceObjectName.toLowerCase() === 'user') {
-    const excludeFields = ['IsDeleted'];
+    const excludeFields = ['isdeleted'];
     combinedFields = combinedFields.filter(
       field => !excludeFields.includes(field)
     );
   }
 
-  return combinedFields.map(field => field.toLowerCase());
+  return combinedFields;
 };
 
 const login = async rawLogger => {
@@ -63,30 +65,17 @@ const describe = async (objectName, rawLogger) => {
   logger.info(`Starting Salesforce object describe for ${objectName}`);
 
   const describeResult = await salesforceConn.sobject(objectName).describe();
+
   logger.info(`Completed Salesforce object describe for ${objectName}`);
 
   return describeResult;
 };
 
-const bulkQuery = async (query, onRecord, onError, onEnd, rawLogger) => {
-  await checkLimit(rawLogger);
-  const logger = rawLogger.child({ helper: 'salesforce' });
-
-  logger.info({ data: { query } }, 'Starting bulk query');
-
-  return salesforceConn.bulk
-    .query(query)
-    .on('record', onRecord)
-    .on('error', onError)
-    .on('end', onEnd);
-};
-
-const bulkQueryV2 = async (
+const bulkQueryToCSV = async (
   salesforceObjectName,
   query,
   lastBulkJob,
   onQueue,
-  onRecord,
   onError,
   onEnd,
   rawLogger
@@ -107,23 +96,25 @@ const bulkQueryV2 = async (
 
   // If last bulk job id is provided, the retrieve job
   if (lastBulkJob.jobId) {
+    logger.info(
+      { data: { lastBulkJob } },
+      'Found last bulk job requested. Retrieving last bulk job'
+    );
     job = salesforceConn.bulk.job(lastBulkJob.jobId);
     batch = job.batch(lastBulkJob.id);
     job.operation = 'queryAll'; // Workaround to make sure it's polling for queryAll
     batch.poll(1000, 3600000);
     queuedBatchInfo = lastBulkJob;
   } else {
+    logger.info({ data: { salesforceObjectName } }, 'Creating new bulk job');
     job = salesforceConn.bulk.createJob(salesforceObjectName, 'queryAll');
     batch = job.createBatch();
     batch.execute(query);
   }
 
-  let totalRecords = 0;
-  let processedRecords = 0;
   batch.on('queue', batchInfo => {
     logger.info({ data: { batchInfo } }, 'Batch queued');
     queuedBatchInfo = batchInfo;
-    totalRecords = batchInfo.totalSize;
     batch.poll(1000, 3600000);
     onQueue(batchInfo);
   });
@@ -135,71 +126,20 @@ const bulkQueryV2 = async (
   batch.on('error', err => onError(err));
 
   batch.on('response', results => {
-    // Loop results and save to CSV file
-    // Wait until all streams are completed
-
-    // const promises = results.map(result => {
-    //   const resultId = result.id;
-    //   const writeStream = fs.createWriteStream(`/tmp/${result.id}.csv`);
-    //   const readStream = batch.result(resultId).stream();
-
-    //   readStream.pipe(writeStream);
-
-    //   return new Promise((resolve, reject) => {
-    //     readStream.on('end', err => {
-    //       if (err) {
-    //         reject(err);
-    //       } else {
-    //         resolve();
-    //       }
-    //     });
-    //   });
-    // });
-
-    // Promise.all(promises)
-    //   .then(() => console.log('All streams have ended'))
-    //   .catch(err => console.error('An error occurred:', err));
-
     results.forEach(result => {
       // Save to the CSV file in /tmp folders
-      batch
-        .result(result.id)
-        .stream()
-        .pipe(fs.createWriteStream(`/tmp/${result.id}.csv`))
-        .on('end', () => {
-          logger.info({ data: { result } }, 'End of result stream');
-        });
-      const records = [];
-      batch
-        .result(result.id)
-        .stream()
-        .pipe(csv())
-        .on('data', async record => {
-          logger.info({ data: { record } }, 'Record');
-          records.push(record);
-          // await onRecord(record);
-          // processedRecords += 1;
-        })
-        .on('end', async () => {
-          await onRecord(records);
-          processedRecords += records.length;
-          logger.info(
-            { data: { result } },
-            'End of result stream, checking if all records are processed'
-          );
-          if (processedRecords >= totalRecords) {
-            logger.info(
-              { processedRecords, totalRecords, data: { result } },
-              'All records are processed, ending bulk query'
-            );
-            await onEnd(queuedBatchInfo);
-          } else {
-            logger.info(
-              { processedRecords, totalRecords, data: { result } },
-              'All records are not processed, waiting for next batch'
-            );
-          }
-        });
+      const writeStream = fs.createWriteStream(`/tmp/${result.id}.csv`);
+
+      writeStream.on('finish', () => {
+        logger.info(
+          { data: { result } },
+          `End of result stream for ${result.id}`
+        );
+
+        onEnd(queuedBatchInfo, results);
+      });
+
+      batch.result(result.id).stream().pipe(writeStream);
     });
   });
 };
@@ -280,26 +220,6 @@ const query = async (soqlQuery, onRecord, onBatch, onEnd, rawLogger) => {
   await onEnd(records[records.length - 1]);
 };
 
-const queryV2 = async (soqlQuery, onRecord, onError, onEnd, rawLogger) => {
-  await checkLimit(rawLogger);
-  const logger = rawLogger.child({ helper: 'salesforce' });
-
-  logger.info({ data: { soqlQuery } }, 'Starting queryV2');
-
-  salesforceConn
-    .query(soqlQuery)
-    .on('record', record => {
-      onRecord(record);
-    })
-    .on('end', () => {
-      onEnd();
-    })
-    .on('error', err => {
-      onError(err);
-    })
-    .run({ autoFetch: true, maxFetch: 10000, scanAll: true });
-};
-
 const create = async (objectName, record, onError, onEnd, rawLogger) => {
   await checkLimit(rawLogger);
   const logger = rawLogger.child({
@@ -357,10 +277,8 @@ module.exports = {
   getSalesforceColumns,
   login,
   describe,
-  bulkQuery,
-  bulkQueryV2,
+  bulkQueryToCSV,
   query,
-  queryV2,
   create,
   update
 };
