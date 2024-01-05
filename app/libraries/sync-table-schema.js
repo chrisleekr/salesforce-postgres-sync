@@ -39,6 +39,8 @@ const convertType = sfType => {
 module.exports = async rawLogger => {
   const logger = rawLogger.child({ library: 'sync-table-schema' });
 
+  logger.info('Starting sync table schema');
+
   const postgresSchema = config.get('salesforce.postgresSchema');
 
   const salesforceObjects = config.get('salesforce.objects');
@@ -97,18 +99,15 @@ module.exports = async rawLogger => {
       };
 
       objectFields.push(objectField);
-    });
 
-    // Loop all salesforceObject fields to get objectFields
-    salesforceObject.fields.forEach(field => {
       // If the field is creatable, then push to createableFields.
-      if (field.createable) {
-        createableFields.push(field.name);
+      if (foundField.createable) {
+        createableFields.push(foundField.name);
       }
 
       // If the field is updateable, then push to updateableFields.
-      if (field.updateable) {
-        updateableFields.push(field.name);
+      if (foundField.updateable) {
+        updateableFields.push(foundField.name);
       }
     });
 
@@ -166,5 +165,7 @@ module.exports = async rawLogger => {
       JSON.stringify(updateableFields),
       logger
     );
+
+    logger.info('Completed sync table schema');
   }
 };

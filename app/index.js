@@ -26,9 +26,23 @@ const postgresToSalesforce = require('./libraries/postgres-to-salesforce');
   // Create a Postgres table from Salesforce objects
   await syncTableSchema(logger);
 
-  // Sync Salesforce to Postgres
-  await salesforceToPostgres(logger);
+  let isSyncRunning = false;
 
-  // Sync Postgres to Salesforce
-  await postgresToSalesforce(logger);
+  setInterval(async () => {
+    if (!isSyncRunning) {
+      isSyncRunning = true;
+
+      logger.info('Starting Salesforce to Postgres sync');
+      await salesforceToPostgres(logger);
+      logger.info('Completed Salesforce to Postgres sync');
+
+      logger.info('Starting Postgres to Salesforce sync');
+      await postgresToSalesforce(logger);
+      logger.info('Completed Postgres to Salesforce sync');
+
+      isSyncRunning = false;
+    } else {
+      logger.info('Salesforce to Postgres sync is already running');
+    }
+  }, 60000); // 60000 milliseconds = 1 minute
 })();

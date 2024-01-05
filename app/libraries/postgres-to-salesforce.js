@@ -62,9 +62,37 @@ module.exports = async rawLogger => {
           }
         });
 
+        logger.debug(
+          {
+            data: { salesforceObjectName, salesforceRecord }
+          },
+          `Creating new record in Salesforce`
+        );
+
         await salesforce.create(
           salesforceObjectName,
           salesforceRecord,
+
+          (record, err) => {
+            logger.error(
+              { err, data: { record } },
+              'Error in Salesforce object create'
+            );
+
+            // Update _sync_status to 'ERROR'
+            postgres.update(
+              schemaName,
+              tableName,
+              {
+                _sync_update_timestamp: syncUpdateTimestamp,
+                _sync_status: 'ERROR',
+                _sync_message: err.message
+              },
+              pendingRecord._sync_id,
+              '_sync_id',
+              logger
+            );
+          },
           (record, result) => {
             logger.debug(
               { data: { record, result } },
@@ -91,26 +119,6 @@ module.exports = async rawLogger => {
               'Completed to create new record in Salesforce'
             );
           },
-          (record, err) => {
-            logger.error(
-              { err, data: { record } },
-              'Error in Salesforce object create'
-            );
-
-            // Update _sync_status to 'ERROR'
-            postgres.update(
-              schemaName,
-              tableName,
-              {
-                _sync_update_timestamp: syncUpdateTimestamp,
-                _sync_status: 'ERROR',
-                _sync_message: err.message
-              },
-              pendingRecord._sync_id,
-              '_sync_id',
-              logger
-            );
-          },
           logger
         );
       } else {
@@ -126,6 +134,13 @@ module.exports = async rawLogger => {
             salesforceRecord[fieldKey] = pendingRecord[fieldKey];
           }
         });
+
+        logger.debug(
+          {
+            data: { salesforceObjectName, salesforceRecord }
+          },
+          `Updating an existing record in Salesforce`
+        );
 
         await salesforce.update(
           salesforceObjectName,

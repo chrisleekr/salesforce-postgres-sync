@@ -165,16 +165,16 @@ module.exports = async rawLogger => {
               );
             }
 
-            // await dbConfig.set(
-            //   `last-sync-timestamp-${salesforceObjectName}`,
-            //   batchInfo.createdDate,
-            //   logger
-            // );
+            await dbConfig.set(
+              `last-sync-timestamp-${salesforceObjectName}`,
+              batchInfo.createdDate,
+              logger
+            );
 
-            // await dbConfig.deleteKey(
-            //   `last-bulk-job-id-${salesforceObjectName}`,
-            //   logger
-            // );
+            await dbConfig.deleteKey(
+              `last-bulk-job-id-${salesforceObjectName}`,
+              logger
+            );
 
             resolve();
           },
