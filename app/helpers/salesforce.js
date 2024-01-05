@@ -125,22 +125,50 @@ const bulkQueryToCSV = async (
 
   batch.on('error', err => onError(err));
 
-  batch.on('response', results => {
-    results.forEach(result => {
+  batch.on('response', async results => {
+    for (const result of results) {
+      const csvPath = `/tmp/${result.id}.csv`;
+      logger.info(
+        { data: { result, csvPath } },
+        `Saving result stream for ${result.id} to ${csvPath}`
+      );
+
       // Save to the CSV file in /tmp folders
-      const writeStream = fs.createWriteStream(`/tmp/${result.id}.csv`);
+      const writeStream = fs.createWriteStream(csvPath);
 
-      writeStream.on('finish', () => {
-        logger.info(
-          { data: { result } },
-          `End of result stream for ${result.id}`
-        );
+      // Assuming batch.result(result.id).stream() returns a Promise
+      const stream = await batch.result(result.id).stream();
+      stream.pipe(writeStream);
 
-        onEnd(queuedBatchInfo, results);
+      // Log progress
+      let progress = 0;
+      stream.on('data', chunk => {
+        progress += chunk.length;
+        // Log only first and every 10MB
+        if (progress % (10 * 1024 * 1024) === 0) {
+          logger.info(
+            `Progress: ${Math.round((progress / 1024 / 1024) * 100) / 100}MB`
+          );
+        }
       });
 
-      batch.result(result.id).stream().pipe(writeStream);
-    });
+      // Wait for the 'finish' event to be emitted
+      await new Promise(resolve => {
+        writeStream.on('finish', () => {
+          logger.info(
+            `Progress: ${Math.round((progress / 1024 / 1024) * 100) / 100}MB`
+          );
+
+          logger.info(
+            { data: { result, csvPath } },
+            `End of result stream for ${result.id} to ${csvPath}`
+          );
+          resolve();
+        });
+      });
+    }
+
+    onEnd(queuedBatchInfo, results);
   });
 };
 

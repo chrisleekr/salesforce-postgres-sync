@@ -138,34 +138,32 @@ module.exports = async rawLogger => {
           async (batchInfo, results) => {
             logger.info(
               { batchInfo, results },
-              `Completed query for ${salesforceObjectName}, importing to Postgres`
+              `Completed bulkQueryToCSV for ${salesforceObjectName}, importing to Postgres`
             );
 
             await postgres.truncate(schemaName, tableName, logger);
 
             // load CSV to postgres table
-            await Promise.all(
-              results.map(async result => {
-                const orgCSVPath = `/tmp/${result.id}.csv`;
-                const convertedCSVPath = `/tmp/${result.id}-converted.csv`;
+            for (const result of results) {
+              const orgCSVPath = `/tmp/${result.id}.csv`;
+              const convertedCSVPath = `/tmp/${result.id}-converted.csv`;
 
-                await csv.prependColumns(
-                  orgCSVPath,
-                  convertedCSVPath,
-                  ['_sync_update_timestamp', '_sync_status', '_sync_message'],
-                  [syncUpdateTimestamp, 'SYNCED', ''],
-                  logger
-                );
+              await csv.prependColumns(
+                orgCSVPath,
+                convertedCSVPath,
+                ['_sync_update_timestamp', '_sync_status', '_sync_message'],
+                [syncUpdateTimestamp, 'SYNCED', ''],
+                logger
+              );
 
-                await postgres.loadCSVToTable(
-                  schemaName,
-                  tableName,
-                  convertedCSVPath,
-                  ',', // delimiter
-                  logger
-                );
-              })
-            );
+              await postgres.loadCSVToTable(
+                schemaName,
+                tableName,
+                convertedCSVPath,
+                ',', // delimiter
+                logger
+              );
+            }
 
             // await dbConfig.set(
             //   `last-sync-timestamp-${salesforceObjectName}`,
