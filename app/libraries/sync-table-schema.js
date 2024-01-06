@@ -60,6 +60,12 @@ module.exports = async rawLogger => {
       logger
     );
 
+    await dbConfig.set(
+      `describe-${salesforceObjectName}`,
+      JSON.stringify(salesforceObject),
+      logger
+    );
+
     // logger.debug({ data: { salesforceObject } }, 'Salesforce object describe');
 
     const objectFields = [];

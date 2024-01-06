@@ -11,7 +11,7 @@ const salesforceConn = new jsforce.Connection({
       : 'https://test.salesforce.com'
 });
 
-salesforceConn.bulk.pollTimeout = 3600000; // 1 hour
+salesforceConn.bulk.pollTimeout = 7200000; // 2 hours
 
 const checkLimit = async rawLogger => {
   const logger = rawLogger.child({ helper: 'salesforce', func: 'checkLimit' });
