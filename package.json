@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "lint": "eslint ./app --fix",
-    "dev": "NODE_OPTIONS=\"--max-old-space-size=8192\" nodemon -r dotenv/config ./app/index.js",
-    "start": "NODE_OPTIONS=\"--max-old-space-size=8192\" node -r dotenv/config dist/index.js",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=4096\" nodemon -r dotenv/config ./app/index.js",
+    "start": "NODE_OPTIONS=\"--max-old-space-size=4096\" node -r dotenv/config dist/index.js",
     "build": "cross-env NODE_ENV=production webpack --config webpack.config.prod.js --progress --profile",
     "postinstall": "husky install",
     "test": "cross-env NODE_ENV=test jest --coverage --detectOpenHandles",
@@ -27,13 +27,16 @@
     "config": "^3.3.9",
     "cron": "^3.1.6",
     "cross-env": "^7.0.3",
+    "csv-parser": "^3.0.0",
+    "csv-writer": "^1.6.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "husky": "^8.0.3",
-    "jsforce": "^1.11.1",
+    "jsforce": "^2.0.0-beta.29",
     "moment": "^2.30.1",
     "moment-timezone": "^0.5.44",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "pg-copy-streams": "^6.0.6"
   },
   "devDependencies": {
     "@babel/cli": "^7.23.4",

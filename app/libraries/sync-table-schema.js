@@ -8,7 +8,7 @@ const convertType = sfType => {
   switch (sfType) {
     case 'id':
     case 'reference':
-      return 'varchar(18)';
+      return 'varchar(20)';
     case 'string':
     case 'textarea':
     case 'picklist':
@@ -29,6 +29,8 @@ const convertType = sfType => {
       return 'date';
     case 'datetime':
       return 'timestamp';
+    case 'email':
+      return 'varchar(255)';
     default:
       return sfType;
   }
@@ -36,6 +38,8 @@ const convertType = sfType => {
 
 module.exports = async rawLogger => {
   const logger = rawLogger.child({ library: 'sync-table-schema' });
+
+  logger.info('Starting sync table schema');
 
   const postgresSchema = config.get('salesforce.postgresSchema');
 
@@ -50,54 +54,84 @@ module.exports = async rawLogger => {
     const salesforceObjectFields =
       salesforceObjects[salesforceObjectName].fields;
 
-    // Retreive the salesforceObject information
+    // Retrieve the salesforceObject information
     const salesforceObject = await salesforce.describe(
       salesforceObjectName,
       logger
     );
 
+    await dbConfig.set(
+      `describe-${salesforceObjectName}`,
+      JSON.stringify(salesforceObject),
+      logger
+    );
+
+    // logger.debug({ data: { salesforceObject } }, 'Salesforce object describe');
+
     const objectFields = [];
     const createableFields = [];
     const updateableFields = [];
 
-    // Loop all salesforceObject fields to get objectFields
-    salesforceObject.fields.forEach(field => {
-      const objectField = {
-        label: field.label,
-        name: field.name,
-        type: field.type,
-        createIndex:
-          field.unique || field.idLookup || field.filterable || field.sortable
-      };
+    // Loop salesforceObjectFields and check whether it's in salesforceObject.fields.
+    // If not exists, then throw error.
 
-      // If the field.name is in the salesforceObjectFields array, then push to objectFields.
-      if (
-        salesforceObjectFields
-          .map(objField => objField.toLowerCase())
-          .includes(field.name.toLowerCase())
-      ) {
-        objectFields.push(objectField);
+    salesforceObjectFields.forEach(fieldName => {
+      // Find field from salesforceObject.field
+      const foundField = salesforceObject.fields.find(
+        field => field.name.toLowerCase() === fieldName.toLowerCase()
+      );
+
+      if (!foundField) {
+        logger.error(
+          {
+            data: { fieldName, salesforceObjectFields }
+          },
+          `Field ${fieldName} not found in ${salesforceObjectName}`
+        );
+        throw new Error(
+          `Field ${fieldName} not found in ${salesforceObjectName}`
+        );
       }
 
+      const objectField = {
+        label: foundField.label,
+        name: foundField.name,
+        type: foundField.type,
+        createIndex:
+          foundField.unique ||
+          foundField.idLookup ||
+          foundField.filterable ||
+          foundField.sortable
+      };
+
+      objectFields.push(objectField);
+
       // If the field is creatable, then push to createableFields.
-      if (field.createable) {
-        createableFields.push(field.name);
+      if (foundField.createable) {
+        createableFields.push(foundField.name);
       }
 
       // If the field is updateable, then push to updateableFields.
-      if (field.updateable) {
-        updateableFields.push(field.name);
+      if (foundField.updateable) {
+        updateableFields.push(foundField.name);
       }
     });
 
     // Construct the table schema
-    const tableSchema = [...salesforceCommonFields, ...objectFields].map(
+    let tableSchema = [...salesforceCommonFields, ...objectFields].map(
       schema => ({
         ...schema,
         name: schema.name.toLowerCase(),
         type: convertType(schema.type)
       })
     );
+
+    if (salesforceObjectName.toLowerCase() === 'user') {
+      const excludeFields = ['isdeleted'];
+      tableSchema = tableSchema.filter(
+        field => !excludeFields.includes(field.name)
+      );
+    }
 
     // Make tableSchema unique by name of the schema
     const uniqueTableSchema = tableSchema.reduce((acc, current) => {
@@ -137,5 +171,7 @@ module.exports = async rawLogger => {
       JSON.stringify(updateableFields),
       logger
     );
+
+    logger.info('Completed sync table schema');
   }
 };

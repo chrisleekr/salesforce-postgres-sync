@@ -1,17 +1,18 @@
+const fs = require('fs');
 const config = require('config');
-const { Client } = require('pg');
+const { Pool } = require('pg');
+const copyFrom = require('pg-copy-streams').from;
 
-const readwriteConn = new Client({
+const readwriteConn = new Pool({
   host: config.get('postgres.readwrite.host'),
   port: config.get('postgres.readwrite.port'),
   user: config.get('postgres.readwrite.user'),
   password: config.get('postgres.readwrite.password'),
-  database: config.get('postgres.readwrite.database')
+  database: config.get('postgres.readwrite.database'),
+  max: 20
 });
 
-readwriteConn.connect();
-
-const readonlyConn = new Client({
+const readonlyConn = new Pool({
   host: config.get('postgres.readonly.host'),
   port: config.get('postgres.readonly.port'),
   user: config.get('postgres.readonly.user'),
@@ -19,7 +20,21 @@ const readonlyConn = new Client({
   database: config.get('postgres.readonly.database')
 });
 
-readonlyConn.connect();
+let readwriteClient;
+// eslint-disable-next-line no-unused-vars
+let readonlyClient;
+
+const connect = async rawLogger => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'connect'
+  });
+
+  readwriteClient = await readwriteConn.connect();
+  readonlyClient = await readonlyConn.connect();
+
+  logger.info('Connected to postgres');
+};
 
 const createSchemaIfNotExists = async (schemaName, rawLogger) => {
   const logger = rawLogger.child({
@@ -188,14 +203,14 @@ const createOrUpdateTable = async (
         `SELECT trigger_name FROM information_schema.triggers ` +
         `WHERE event_object_schema = '${schemaName}' ` +
         `AND event_object_table = '${tableName}' AND trigger_name = '${triggerName}'`;
-      const triggerResult = await readonlyConn.query(selectTriggerQuery);
+      const triggerResult = await readwriteConn.query(selectTriggerQuery);
 
       // Create trigger if not exists
       if (triggerResult.rows.length === 0) {
         const triggerQuery =
           `CREATE TRIGGER ${triggerName} ` +
           `BEFORE INSERT OR UPDATE ON ${schemaName}.${tableName} ` +
-          `FOR EACH ROW EXECUTE PROCEDURE ${triggerFunctionName}()`;
+          `FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.${triggerFunctionName}()`;
         await readwriteConn.query(triggerQuery);
         logger.info(`Created trigger if not exists ${triggerName}`);
       }
@@ -355,10 +370,139 @@ const update = async (
   });
 };
 
+const deleteRow = async (schemaName, tableName, idColumn, id, rawLogger) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'deleteRow',
+    tableName
+  });
+
+  const deleteQuery = `
+    DELETE FROM ${schemaName}.${tableName}
+    WHERE ${idColumn} = $1
+  `;
+
+  logger.debug(
+    {
+      data: { deleteQuery, schemaName, tableName, idColumn, id }
+    },
+    `Delete ${tableName}`
+  );
+
+  return readwriteConn.query(deleteQuery, [id]).catch(err => {
+    logger.error(
+      {
+        err,
+        data: { deleteQuery, schemaName, tableName, idColumn, id }
+      },
+      `Error in delete ${tableName}`
+    );
+    throw err;
+  });
+};
+
+const truncate = async (schemaName, tableName, rawLogger) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'truncate',
+    tableName
+  });
+
+  const truncateQuery = `
+    TRUNCATE TABLE ${schemaName}.${tableName}
+  `;
+
+  logger.debug(
+    {
+      data: { truncateQuery, schemaName, tableName }
+    },
+    `Truncate table ${schemaName}.${tableName}`
+  );
+
+  return readwriteConn.query(truncateQuery).catch(err => {
+    logger.error(
+      {
+        err,
+        data: { truncateQuery, schemaName, tableName }
+      },
+      `Error in truncate table ${schemaName}.${tableName}`
+    );
+    throw err;
+  });
+};
+
+const loadCSVToTable = async (
+  schemaName,
+  tableName,
+  csvPath,
+  delimiter,
+  rawLogger
+) => {
+  const logger = rawLogger.child({
+    helper: 'postgres',
+    func: 'loadCSVToTable',
+    csvPath,
+    tableName,
+    delimiter
+  });
+
+  logger.info(`Loading CSV file to ${schemaName}.${tableName}`);
+
+  await new Promise((resolve, reject) => {
+    // Get headers from CSV
+    const headers = fs
+      .readFileSync(csvPath, 'utf8')
+      .split('\n')
+      .shift()
+      .split(delimiter);
+
+    // Begin the COPY operation
+    const ingestStream = readwriteClient.query(
+      copyFrom(
+        `COPY ${schemaName}.${tableName} ( ${headers.join(
+          ','
+        )}) FROM STDIN DELIMITER '${delimiter}' CSV HEADER`
+      )
+    );
+
+    const sourceStream = fs.createReadStream(csvPath);
+
+    // Log progress
+    let progress = 0;
+    sourceStream.on('data', chunk => {
+      progress += chunk.length;
+      logger.info(
+        `Progress: ${Math.round((progress / 1024 / 1024) * 100) / 100}MB`
+      );
+    });
+
+    sourceStream.on('error', error => {
+      logger.error(`Error in READ CSV operation: ${error}`);
+      reject(error);
+    });
+
+    ingestStream.on('error', error => {
+      logger.error(`Error in COPY operation: ${error}`);
+      reject(error);
+    });
+
+    ingestStream.on('finish', resolve);
+
+    // Pipe the CSV data to the COPY stream
+    sourceStream.pipe(ingestStream);
+  });
+
+  logger.info(`Completed loading CSV file to ${schemaName}.${tableName}`);
+};
+
 module.exports = {
+  connect,
   createSchemaIfNotExists,
   createOrUpdateTable,
   upsert,
   select,
-  update
+  update,
+  deleteRow,
+  truncate,
+  loadCSVToTable
 };
