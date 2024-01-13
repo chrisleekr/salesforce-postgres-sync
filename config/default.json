@@ -10,52 +10,56 @@
         "type": "integer",
         "notNull": true,
         "primaryKey": true,
-        "defaultSequence": true
+        "defaultSequence": true,
+        "isSalesforceColumn": false
       },
       {
         "name": "_sync_update_timestamp",
         "type": "timestamp",
-        "createIndex": true
+        "createIndex": true,
+        "isSalesforceColumn": false
       },
       {
         "name": "_sync_status",
         "type": "varchar(30)",
         "description": "TODO enum SYNCED|ERROR|PENDING, just string for now",
-        "createIndex": true
+        "createIndex": true,
+        "isSalesforceColumn": false
       },
       {
         "name": "_sync_message",
-        "type": "text"
+        "type": "text",
+        "isSalesforceColumn": false
       },
       {
         "name": "Id",
         "type": "id",
         "createUniqueIndex": true,
-        "sfColumn": true
+        "isSalesforceColumn": true
       },
       {
         "name": "CreatedDate",
         "type": "timestamp",
         "createIndex": true,
-        "sfColumn": true
+        "isSalesforceColumn": true
       },
       {
         "name": "IsDeleted",
         "type": "boolean",
         "createIndex": true,
-        "sfColumn": true
+        "isSalesforceColumn": true
       },
       {
         "name": "LastModifiedDate",
         "type": "timestamp",
         "createIndex": true,
-        "sfColumn": true
+        "isSalesforceColumn": true
       },
       {
         "name": "SystemModstamp",
         "type": "timestamp",
         "createIndex": true,
-        "sfColumn": true
+        "isSalesforceColumn": true
       }
     ],
     "objects": "{}",
