@@ -169,10 +169,8 @@ const notApplicableCreatedDate = ['UserRole'];
               name: found.name.toLowerCase(),
               type: convertType(foundReferenceField.type),
               createIndex:
-                !foundReferenceField.unique &&
-                (foundReferenceField.filterable ||
-                  foundReferenceField.sortable),
-              createUniqueIndex: foundReferenceField.unique,
+                !found.unique && (found.filterable || found.sortable),
+              createUniqueIndex: found.unique,
               isSalesforceColumn: true,
               canCreate: foundReferenceField.createable,
               canUpdate: foundReferenceField.updateable,
@@ -183,6 +181,7 @@ const notApplicableCreatedDate = ['UserRole'];
                 type: found.type,
                 length: found.length,
                 custom: found.custom,
+                unique: found.unique,
                 filterable: found.filterable,
                 sortable: found.sortable,
                 createable: foundReferenceField.createable,
@@ -231,10 +230,8 @@ const notApplicableCreatedDate = ['UserRole'];
               name: found.name.toLowerCase(),
               type: convertType(foundReferenceField.type),
               createIndex:
-                !foundReferenceField.unique &&
-                (foundReferenceField.filterable ||
-                  foundReferenceField.sortable),
-              createUniqueIndex: foundReferenceField.unique,
+                !found.unique && (found.filterable || found.sortable),
+              createUniqueIndex: found.unique,
               isSalesforceColumn: true,
               canCreate: foundReferenceField.createable,
               canUpdate: foundReferenceField.updateable,
@@ -245,6 +242,7 @@ const notApplicableCreatedDate = ['UserRole'];
                 type: found.type,
                 length: found.length,
                 custom: found.custom,
+                unique: found.unique,
                 filterable: found.filterable,
                 sortable: found.sortable,
                 createable: foundReferenceField.createable,

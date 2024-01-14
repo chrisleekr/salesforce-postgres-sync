@@ -15,6 +15,20 @@ const postgres = require('../../helpers/postgres');
 
 const { salesforceLogin } = require('./salesforce-login');
 
+const shouldCleanSync = async objectName => {
+  const lastSystemModeStamp = await dbConfig.get(
+    `${objectName}-last-system-mod-stamp`,
+    logger
+  );
+  // If lastSystemModeStamp is null, then return true
+  if (!lastSystemModeStamp) {
+    return true;
+  }
+
+  // If lastSystemModeStamp is not null, then don't process clean sync.
+  return false;
+};
+
 (async () => {
   try {
     // Connect to Postgres
@@ -36,6 +50,14 @@ const { salesforceLogin } = require('./salesforce-login');
         logger.info(
           { objectName },
           `No fields configured for object ${objectName}`
+        );
+        continue;
+      }
+
+      if (!(await shouldCleanSync(objectName, logger))) {
+        logger.info(
+          { objectName },
+          `Should not clean sync for object ${objectName} because last system mod stamp is not null.`
         );
         continue;
       }
@@ -88,7 +110,7 @@ const { salesforceLogin } = require('./salesforce-login');
       const lastCleanSyncJob =
         JSON.parse(
           await dbConfig.get(`${objectName}-last-clean-sync-job`, logger)
-        ) || {};
+        ) || null;
 
       logger.info(
         { lastCleanSyncJob },
@@ -164,7 +186,7 @@ const { salesforceLogin } = require('./salesforce-login');
       */
       let jobState = '';
       const startTime = Date.now();
-      const maximumExecutionMins = 10 * 60 * 1000;
+      const maximumExecutionMins = 90 * 60 * 1000;
 
       while (jobState !== 'JobComplete') {
         logger.info({ jobState }, 'Waiting for job to complete');
@@ -201,7 +223,9 @@ const { salesforceLogin } = require('./salesforce-login');
         );
         jobState = jobStatusResponse.data.state;
         if (Date.now() - startTime > maximumExecutionMins) {
-          logger.info('Job status check exceeded 10 minutes. Exiting...');
+          logger.info(
+            'Job status check exceeded 1 hour 30 minutes. Exiting...'
+          );
           break;
         }
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -317,7 +341,7 @@ const { salesforceLogin } = require('./salesforce-login');
               const convertedRow = {
                 _sync_update_timestamp: moment.utc().format(),
                 _sync_status: 'SYNCED',
-                _sync_message: `CleanSyncJobId: ${jobId}`,
+                _sync_message: JSON.stringify({ command: 'cleanSync', jobId }),
                 ...lowerCaseRow
               };
 
@@ -365,6 +389,10 @@ const { salesforceLogin } = require('./salesforce-login');
           ',', // delimiter
           logger
         );
+
+        // Delete csvPath and convertedCSVPath
+        fs.unlinkSync(csvPath);
+        fs.unlinkSync(convertedCSVPath);
 
         fileNumber += 1;
       }
