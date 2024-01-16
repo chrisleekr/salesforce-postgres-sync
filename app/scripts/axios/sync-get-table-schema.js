@@ -124,75 +124,86 @@ const notApplicableCreatedDate = ['UserRole'];
         if (found) {
           let fieldObjectName = objectName;
 
-          if (found.relationshipName) {
-            [fieldObjectName] = found.referenceTo;
-            logger.info(
-              { found, fieldObjectName },
-              `Field ${found.name} referenceTo for ${objectName}`
-            );
+          // if (found.relationshipName) {
+          //   [fieldObjectName] = found.referenceTo;
+          //   logger.info(
+          //     { found, fieldObjectName },
+          //     `Field ${found.name} referenceTo for ${objectName}`
+          //   );
 
-            // Get the object describe
-            const fieldObjectDescribe = JSON.parse(
-              await dbConfig.get(`${fieldObjectName}-describe`, logger)
-            );
+          //   // Get the object describe
+          //   const fieldObjectDescribe = JSON.parse(
+          //     await dbConfig.get(`${fieldObjectName}-describe`, logger)
+          //   );
 
-            let fieldObjectRelationshipName;
-            if (found.type === 'reference') {
-              fieldObjectRelationshipName = 'Id';
-            } else {
-              fieldObjectRelationshipName = found.name;
-            }
+          //   let fieldObjectRelationshipName;
+          //   if (found.type === 'reference') {
+          //     fieldObjectRelationshipName = 'Id';
+          //   } else {
+          //     fieldObjectRelationshipName = found.name;
+          //   }
 
-            // Find the found.name in the object describe
-            const foundReferenceField = fieldObjectDescribe.fields.find(
-              field =>
-                field.name.toLowerCase() ===
-                fieldObjectRelationshipName.toLowerCase()
-            );
+          //   // Find the found.name in the object describe
+          //   const foundReferenceField = fieldObjectDescribe.fields.find(
+          //     field =>
+          //       field.name.toLowerCase() ===
+          //       fieldObjectRelationshipName.toLowerCase()
+          //   );
 
-            if (!foundReferenceField) {
-              logger.error(
-                {
-                  data: {
-                    fieldObjectName,
-                    found
-                  }
-                },
-                `Field ${found.name} not found in ${fieldObjectName}`
-              );
-              throw new Error(
-                `Field ${found.name} not found in ${fieldObjectName}`
-              );
-            }
+          //   if (!foundReferenceField) {
+          //     logger.error(
+          //       {
+          //         data: {
+          //           fieldObjectName,
+          //           found
+          //         }
+          //       },
+          //       `Field ${found.name} not found in ${fieldObjectName}`
+          //     );
+          //     throw new Error(
+          //       `Field ${found.name} not found in ${fieldObjectName}`
+          //     );
+          //   }
 
-            tableConfiguredColumns.push({
-              name: found.name.toLowerCase(),
-              type: convertType(foundReferenceField.type),
-              createIndex:
-                !found.unique && (found.filterable || found.sortable),
-              createUniqueIndex: found.unique,
-              isSalesforceColumn: true,
-              canCreate: foundReferenceField.createable,
-              canUpdate: foundReferenceField.updateable,
-              salesforce: {
-                objectName: fieldObjectName,
-                name: fieldObjectRelationshipName,
-                label: found.label,
-                type: found.type,
-                length: found.length,
-                custom: found.custom,
-                unique: found.unique,
-                filterable: found.filterable,
-                sortable: found.sortable,
-                createable: foundReferenceField.createable,
-                updateable: foundReferenceField.updateable,
-                calculated: found.calculated,
-                calculatedFormula: found.calculatedFormula,
-                referenceTo: found.referenceTo,
-                relationshipName: found.relationshipName
-              }
-            });
-          } else if (found.calculated) {
+          //   const createable =
+          //     found.name === 'RecordTypeId'
+          //       ? found.createable
+          //       : foundReferenceField.createable;
+          //   const updateable =
+          //     found.name === 'RecordTypeId'
+          //       ? found.updateable
+          //       : foundReferenceField.updateable;
+
+          //   tableConfiguredColumns.push({
+          //     name: found.name.toLowerCase(),
+          //     type: convertType(foundReferenceField.type),
+          //     createIndex:
+          //       !found.unique && (found.filterable || found.sortable),
+          //     createUniqueIndex: found.unique,
+          //     isSalesforceColumn: true,
+          //     canCreate: createable,
+          //     canUpdate: updateable,
+          //     salesforce: {
+          //       objectName: fieldObjectName,
+          //       name: fieldObjectRelationshipName,
+          //       label: found.label,
+          //       type: found.type,
+          //       length: found.length,
+          //       custom: found.custom,
+          //       unique: found.unique,
+          //       filterable: found.filterable,
+          //       sortable: found.sortable,
+          //       createable: foundReferenceField.createable,
+          //       updateable: foundReferenceField.updateable,
+          //       calculated: found.calculated,
+          //       calculatedFormula: found.calculatedFormula,
+          //       referenceTo: found.referenceTo,
+          //       relationshipName: found.relationshipName
+          //     }
+          //   });
+          // } else
+
+          if (found.calculated) {
             // Field is calculated
             const [fieldObjectNameReferenceTo, fieldObjectRelationshipName] =
               found.calculatedFormula.split('.');
@@ -236,7 +247,11 @@ const notApplicableCreatedDate = ['UserRole'];
               canCreate: foundReferenceField.createable,
               canUpdate: foundReferenceField.updateable,
               salesforce: {
-                objectName: fieldObjectName,
+                objectName: fieldObjectNameReferenceTo,
+                relationshipObjectName: fieldObjectNameReferenceTo.replace(
+                  '__r',
+                  ''
+                ),
                 name: found.name,
                 label: found.label,
                 type: found.type,
@@ -254,18 +269,28 @@ const notApplicableCreatedDate = ['UserRole'];
               }
             });
           } else {
+            const isUnique = found.unique || found.name.toLowerCase() === 'id';
+
+            const unprocessableFields = ['Name', 'Account__c'];
+            const createable = unprocessableFields.includes(found.name)
+              ? false
+              : found.createable;
+            const updateable = unprocessableFields.includes(found.name)
+              ? false
+              : found.updateable;
+
             // Field in the object
             tableConfiguredColumns.push({
               name: found.name.toLowerCase(),
               type: convertType(found.type),
-              createIndex:
-                !found.unique && (found.filterable || found.sortable),
-              createUniqueIndex: found.unique,
+              createIndex: !isUnique && (found.filterable || found.sortable),
+              createUniqueIndex: isUnique,
               isSalesforceColumn: true,
-              canCreate: found.createable,
-              canUpdate: found.updateable,
+              canCreate: createable,
+              canUpdate: updateable,
               salesforce: {
                 objectName: fieldObjectName,
+                relationshipObjectName: fieldObjectName,
                 name: found.name,
                 label: found.label,
                 type: found.type,

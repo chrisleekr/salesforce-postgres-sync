@@ -28,6 +28,7 @@
     "Prefilterable",
     "readwrite",
     "sobject",
+    "sobjects",
     "soql",
     "tulind",
     "updateable",
