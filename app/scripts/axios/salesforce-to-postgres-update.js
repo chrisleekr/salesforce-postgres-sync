@@ -1,12 +1,10 @@
 /* eslint-disable no-continue */
-const axios = require('axios');
 const moment = require('moment');
 const config = require('config');
 const logger = require('../../helpers/logger');
 const dbConfig = require('../../helpers/db-config');
 const postgres = require('../../helpers/postgres');
-
-const { salesforceLogin } = require('./salesforce-login');
+const salesforce = require('../../helpers/salesforce');
 
 const shouldIncrementalUpdate = async objectName => {
   const lastSystemModStamp = await dbConfig.get(
@@ -29,7 +27,7 @@ const shouldIncrementalUpdate = async objectName => {
 
     const schemaName = config.get('salesforce.postgresSchema');
 
-    const { restUrl, sessionId } = await salesforceLogin();
+    const { restUrl, sessionId } = await salesforce.login();
 
     logger.info({ sessionId, restUrl }, 'Parsed login response');
 
@@ -57,16 +55,10 @@ const shouldIncrementalUpdate = async objectName => {
 
       logger.info({ objectName }, 'Processing object name');
 
-      const objectSchema = JSON.parse(
-        await dbConfig.get(`${objectName}-schema`, logger)
+      const salesforceColumns = await salesforce.getSalesforceColumns(
+        objectName,
+        logger
       );
-      // Get name of fields if isSalesforceColumn is true
-      const salesforceColumns = objectSchema.reduce((acc, field) => {
-        if (field.isSalesforceColumn) {
-          acc.push(field.name);
-        }
-        return acc;
-      }, []);
 
       logger.info({ salesforceColumns }, 'Loaded Salesforce columns');
 
@@ -81,81 +73,10 @@ const shouldIncrementalUpdate = async objectName => {
 
       logger.info({ query }, 'Querying Salesforce');
 
-      // https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_query.htm?q=query
-      // Sample Request
-      //  GET /services/data/vXX.X/query?q=query
-      //      A SOQL query. To create a valid URI, replace spaces in the query string with a plus sign + or with %20. For example: SELECT+Name+FROM+MyObject. If the SOQL query string is invalid, a MALFORMED_QUERY response is returned.
-      // Sample Response
-      /*
-        {
-          "totalSize": 3222,
-          "done": false,
-          "nextRecordsUrl": "/services/data/v60.0/query/01gRO0000016PIAYA2-500",
-          "records": [
-            {
-              "attributes": {
-                "type": "Contact",
-                "url": "/services/data/v60.0/sobjects/Contact/003RO0000035WQgYAM"
-              },
-              "Id": "003RO0000035WQgYAM",
-              "Name": "John Smith"
-            },
-            ...
-          ]
-        }
-      */
-
-      let totalSize;
-      let done;
-      let nextRecordsUrl;
       let lastSystemModStamp = '';
-
-      while (!done || done === false) {
-        // get hostname including https://
-        const hostname = restUrl.match(/https:\/\/[^/]+/)[0];
-
-        const queryUrl = nextRecordsUrl
-          ? `${hostname}${nextRecordsUrl}`
-          : `${restUrl}/query?q=${encodeURIComponent(query)}`;
-
-        logger.info(
-          {
-            queryUrl,
-            totalSize,
-            done,
-            nextRecordsUrl,
-            lastSystemModStamp
-          },
-          'Querying Salesforce'
-        );
-        const queryResponse = await axios({
-          method: 'get',
-          url: queryUrl,
-          headers: {
-            Authorization: `Bearer ${sessionId}`
-          }
-        });
-
-        logger.info(
-          {
-            status: queryResponse.status,
-            headers: queryResponse.headers
-          },
-          'Query results response'
-        );
-
-        const { data } = queryResponse;
-        totalSize = data.totalSize;
-        done = data.done;
-        nextRecordsUrl = data.nextRecordsUrl;
-        const { records } = data;
-
-        logger.info(
-          { totalSize, done, nextRecordsUrl, recordsLength: records.length },
-          'Job results response data'
-        );
-
-        for (const record of records) {
+      await salesforce.query(
+        query,
+        async (record, recordLogger) => {
           // Convert all keys in records to lowercase
           const recordLowercase = {};
           Object.keys(record).forEach(k => {
@@ -188,7 +109,7 @@ const shouldIncrementalUpdate = async objectName => {
               }, [])
             ],
             'id',
-            logger
+            recordLogger
           );
 
           // If row.systemmodstamp is greater than lastSystemModStamp, then update lastSystemModStamp
@@ -198,8 +119,13 @@ const shouldIncrementalUpdate = async objectName => {
           ) {
             lastSystemModStamp = recordLowercase.systemmodstamp;
           }
-        }
-      }
+        },
+        {
+          restUrl,
+          sessionId
+        },
+        logger
+      );
 
       // Save last-system-mod-stamp
       if (lastSystemModStamp) {

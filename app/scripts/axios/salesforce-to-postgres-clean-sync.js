@@ -12,8 +12,7 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const logger = require('../../helpers/logger');
 const dbConfig = require('../../helpers/db-config');
 const postgres = require('../../helpers/postgres');
-
-const { salesforceLogin } = require('./salesforce-login');
+const salesforce = require('../../helpers/salesforce');
 
 const shouldCleanSync = async objectName => {
   const lastSystemModeStamp = await dbConfig.get(
@@ -36,7 +35,7 @@ const shouldCleanSync = async objectName => {
 
     const schemaName = config.get('salesforce.postgresSchema');
 
-    const { restUrl, sessionId } = await salesforceLogin();
+    const { restUrl, sessionId } = await salesforce.login();
 
     logger.info({ sessionId, restUrl }, 'Parsed login response');
 
@@ -64,46 +63,10 @@ const shouldCleanSync = async objectName => {
 
       logger.info({ objectName }, 'Processing object name');
 
-      // Create bulk query job - https://developer.salesforce.com/docs/atlas.en-us.api_asynch.meta/api_asynch/query_create_job.htm
-      /*
-      Sample Request
-        POST restUrl/jobs/query
-        Authorization: Bearer ${sessionId}
-        Accept: application/json
-        Content-Type: application/json
-        Sforce-Enable-PKChunking: chunkSize=100000;
-        {
-          "operation": "query",  // Don't need queryAll because don't need deleted records
-          "query": `SELECT Id FROM ${objectName}`,
-          "contentType": "CSV"
-        }
-      Sample Response
-        {
-          "id" : "750R0000000zlh9IAA",
-          "operation" : "query",
-          "object" : "Account",
-          "createdById" : "005R0000000GiwjIAC",
-          "createdDate" : "2018-12-10T17:50:19.000+0000",
-          "systemModstamp" : "2018-12-10T17:50:19.000+0000",
-          "state" : "UploadComplete",
-          "concurrencyMode" : "Parallel",
-          "contentType" : "CSV",
-          "apiVersion" : 46.0,
-          "lineEnding" : "LF",
-          "columnDelimiter" : "COMMA"
-        }
-      */
-
-      const objectSchema = JSON.parse(
-        await dbConfig.get(`${objectName}-schema`, logger)
+      const salesforceColumns = await salesforce.getSalesforceColumns(
+        objectName,
+        logger
       );
-      // Get name of fields if isSalesforceColumn is true
-      const salesforceColumns = objectSchema.reduce((acc, field) => {
-        if (field.isSalesforceColumn) {
-          acc.push(field.name);
-        }
-        return acc;
-      }, []);
 
       logger.info({ salesforceColumns }, 'Loaded Salesforce columns');
 
@@ -125,25 +88,10 @@ const shouldCleanSync = async objectName => {
 
         logger.info({ query }, 'Salesforce Query, creating query job');
 
-        const queryJobResponse = await axios.post(
-          `${restUrl}/jobs/query`,
-          {
-            operation: 'query',
-            query,
-            contentType: 'CSV'
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${sessionId}`,
-              Accept: 'application/json',
-              'Content-Type': 'application/json',
-              'Sforce-Enable-PKChunking': 'chunkSize=100000;'
-            }
-          }
-        );
-        logger.info(
-          { status: queryJobResponse.status, data: queryJobResponse.data },
-          'query job response'
+        const queryJobResponse = await salesforce.jobsQueryToCSV(
+          query,
+          { restUrl, sessionId },
+          logger
         );
 
         await dbConfig.set(
@@ -157,33 +105,6 @@ const shouldCleanSync = async objectName => {
         jobId = lastCleanSyncJob.id;
       }
 
-      // Loop until the job state is JobComplete
-      //    Maximum loop is 10 minutes
-      // Retrieve job status - https://developer.salesforce.com/docs/atlas.en-us.api_asynch.meta/api_asynch/query_get_one_job.htm
-      /*
-      Sample Request
-        GET restUrl/jobs/query/${jobId}
-        Authorization: Bearer ${sessionId}
-      Sample Response
-        {
-          "id" : "750R0000000zlh9IAA",
-          "operation" : "query",
-          "object" : "Account",
-          "createdById" : "005R0000000GiwjIAC",
-          "createdDate" : "2018-12-10T17:50:19.000+0000",
-          "systemModstamp" : "2018-12-10T17:51:27.000+0000",
-          "state" : "JobComplete",
-          "concurrencyMode" : "Parallel",
-          "contentType" : "CSV",
-          "apiVersion" : 46.0,
-          "jobType" : "V2Query",
-          "lineEnding" : "LF",
-          "columnDelimiter" : "COMMA",
-          "numberRecordsProcessed" : 500,
-          "retries" : 0,
-          "totalProcessingTime" : 334
-       }
-      */
       let jobState = '';
       const startTime = Date.now();
       const maximumExecutionMins = 90 * 60 * 1000;
@@ -195,13 +116,10 @@ const shouldCleanSync = async objectName => {
         // In catch statement, if jobStatusResponse.status === 400, then ignore. Otherwise, throw error
         let jobStatusResponse;
         try {
-          jobStatusResponse = await axios.get(
-            `${restUrl}/jobs/query/${jobId}`,
-            {
-              headers: {
-                Authorization: `Bearer ${sessionId}`
-              }
-            }
+          jobStatusResponse = await salesforce.jobsQueryToCSV(
+            jobId,
+            { restUrl, sessionId },
+            logger
           );
         } catch (err) {
           if (err.response && err.response.status !== 400) {
@@ -213,14 +131,7 @@ const shouldCleanSync = async objectName => {
             );
           }
         }
-        logger.info(
-          {
-            status: jobStatusResponse.status,
-            headers: jobStatusResponse.headers,
-            data: jobStatusResponse.data
-          },
-          'Job status response'
-        );
+
         jobState = jobStatusResponse.data.state;
         if (Date.now() - startTime > maximumExecutionMins) {
           logger.info(

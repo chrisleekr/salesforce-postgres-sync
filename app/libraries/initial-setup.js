@@ -6,6 +6,8 @@ module.exports = async rawLogger => {
 
   const postgresSchema = config.get('salesforce.postgresSchema');
 
+  await postgres.createSchemaIfNotExists(postgresSchema, logger);
+
   await postgres.createOrUpdateTable(
     postgresSchema,
     '_config',
