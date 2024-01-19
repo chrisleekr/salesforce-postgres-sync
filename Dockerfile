@@ -18,10 +18,8 @@ CMD [ "node", "app/index.js" ]
 # build stage
 FROM dev-stage AS build-stage
 
-RUN npm run build
-
-RUN rm -rf node_modules && \
-  npm install --production
+RUN npm run build && \
+  npm prune --production
 
 # production stage
 FROM node:20-alpine AS production-stage
