@@ -1,8 +1,6 @@
 # development stage
 FROM node:20-alpine AS dev-stage
 
-# RUN apk add --no-cache make gcc g++ py-pip
-
 WORKDIR /srv
 
 COPY package*.json ./
