@@ -121,7 +121,7 @@ module.exports = async rawLogger => {
         break;
       }
 
-      await sleep(2000);
+      await sleep(2);
     }
 
     logger.info({ jobState }, 'Job completed');

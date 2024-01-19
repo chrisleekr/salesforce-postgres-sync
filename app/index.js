@@ -19,15 +19,14 @@ const commands = require('./commands');
     // Create a Postgres table from Salesforce objects
     await commands.syncTables(logger);
 
+    // Do clean sync if necessary
+    await commands.salesforceToPostgresCleanSync(logger);
+
     let isSyncRunning = false;
 
     setInterval(async () => {
       if (!isSyncRunning) {
         isSyncRunning = true;
-
-        logger.info('Starting Salesforce to Postgres - Clean sync');
-        await commands.salesforceToPostgresCleanSync(logger);
-        logger.info('Completed Salesforce to Postgres - Clean sync');
 
         logger.info('Starting Salesforce to Postgres - Increment update');
         await commands.salesforceToPostgresIncrementUpdate(logger);

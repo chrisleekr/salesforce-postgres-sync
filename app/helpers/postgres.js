@@ -157,6 +157,7 @@ const createOrUpdateTable = async (
     indexToCreate.map(async index => {
       const indexName = `idx_${tableName}_${index.name}_idx`;
       const indexQuery = `CREATE INDEX IF NOT EXISTS ${indexName} ON ${schemaName}.${tableName} (${index.name})`;
+      logger.info({ indexQuery }, `Creating index if not exists ${indexName}`);
       await readwriteConn.query(indexQuery);
       logger.info(`Created index if not exists ${indexName}`);
     })
@@ -172,6 +173,10 @@ const createOrUpdateTable = async (
     uniqueIndexToCreate.map(async index => {
       const indexName = `idx_${tableName}_${index.name}_idx`;
       const indexQuery = `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON ${schemaName}.${tableName} (${index.name})`;
+      logger.info(
+        { indexQuery },
+        `Creating unique index if not exists ${indexName}`
+      );
       await readwriteConn.query(indexQuery);
       logger.info(`Created unique index if not exists ${indexName}`);
     })
@@ -211,6 +216,10 @@ const createOrUpdateTable = async (
           `CREATE TRIGGER ${triggerName} ` +
           `BEFORE INSERT OR UPDATE ON ${schemaName}.${tableName} ` +
           `FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.${triggerFunctionName}()`;
+        logger.info(
+          { triggerQuery },
+          `Creating trigger if not exists ${triggerName}`
+        );
         await readwriteConn.query(triggerQuery);
         logger.info(`Created trigger if not exists ${triggerName}`);
       }
@@ -218,43 +227,6 @@ const createOrUpdateTable = async (
   );
 
   logger.info(`Created or updated table ${schemaName}.${tableName}`);
-};
-
-const initialSetup = async rawLogger => {
-  const logger = rawLogger.child({ library: 'initial-setup' });
-
-  const postgresSchema = config.get('salesforce.postgresSchema');
-
-  await createSchemaIfNotExists(postgresSchema, logger);
-
-  await createOrUpdateTable(
-    postgresSchema,
-    '_config',
-    [
-      {
-        name: 'id',
-        type: 'integer',
-        notNull: true,
-        primaryKey: true,
-        defaultSequence: true
-      },
-      {
-        name: 'key',
-        type: 'varchar(255)',
-        createUniqueIndex: true
-      },
-      {
-        name: 'value',
-        type: 'text'
-      },
-      {
-        name: 'update_timestamp',
-        type: 'timestamp',
-        defaultNow: true
-      }
-    ],
-    logger
-  );
 };
 
 const upsert = async (
@@ -536,7 +508,6 @@ module.exports = {
   connect,
   createSchemaIfNotExists,
   createOrUpdateTable,
-  initialSetup,
   upsert,
   select,
   update,

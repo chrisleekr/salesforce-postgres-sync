@@ -10,14 +10,13 @@
     "build": "cross-env NODE_ENV=production webpack --config webpack.config.prod.js --progress --profile",
     "postinstall": "husky install",
     "test": "cross-env NODE_ENV=test jest --coverage --detectOpenHandles",
-    "docker:build": "docker build . --build-arg PACKAGE_VERSION=$(node -p \"require('./package.json').version\") --build-arg NODE_ENV=production --target production-stage -t chrisleekr/salesforce-postgres-sync:latest",
-    "docker:run": "docker run -it --rm --env-file=.env chrisleekr/salesforce-postgres-sync:latest"
+    "docker:build": "docker build . --build-arg PACKAGE_VERSION=$(node -p \"require('./package.json').version\") --build-arg NODE_ENV=production --target production-stage -t chrisleekr/salesforce-postgres-sync:latest"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chrisleekr/salesforce-postgres-sync.git"
   },
-  "author": "Chris Lee<git@chrislee.kr>",
+  "author": "Chris Lee <git@chrislee.kr>",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/chrisleekr/salesforce-postgres-sync/issues"
