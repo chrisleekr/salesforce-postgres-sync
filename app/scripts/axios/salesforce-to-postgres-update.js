@@ -27,7 +27,7 @@ const shouldIncrementalUpdate = async objectName => {
 
     const schemaName = config.get('salesforce.postgresSchema');
 
-    const { restUrl, sessionId } = await salesforce.login();
+    const { restUrl, sessionId } = await salesforce.login(logger);
 
     logger.info({ sessionId, restUrl }, 'Parsed login response');
 
