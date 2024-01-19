@@ -1,7 +1,7 @@
 {
   "name": "salesforce-postgres-sync",
   "version": "0.0.1",
-  "description": "This is a test project for testing github actions",
+  "description": "This is a test project for testing Salesforce and Postgres Bidirectional Sync",
   "main": "index.js",
   "scripts": {
     "lint": "eslint ./app --fix",
@@ -10,13 +10,14 @@
     "build": "cross-env NODE_ENV=production webpack --config webpack.config.prod.js --progress --profile",
     "postinstall": "husky install",
     "test": "cross-env NODE_ENV=test jest --coverage --detectOpenHandles",
-    "docker:build": "docker build . --build-arg PACKAGE_VERSION=$(node -p \"require('./package.json').version\") --build-arg NODE_ENV=production --target production-stage -t chrisleekr/salesforce-postgres-sync:latest"
+    "docker:build": "docker build . --build-arg PACKAGE_VERSION=$(node -p \"require('./package.json').version\") --build-arg NODE_ENV=production --target production-stage -t chrisleekr/salesforce-postgres-sync:latest",
+    "docker:run": "docker run -it --rm --env-file=.env chrisleekr/salesforce-postgres-sync:latest"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chrisleekr/salesforce-postgres-sync.git"
   },
-  "author": "",
+  "author": "Chris Lee<git@chrislee.kr>",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/chrisleekr/salesforce-postgres-sync/issues"
@@ -33,7 +34,6 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "husky": "^8.0.3",
-    "jsforce": "^2.0.0-beta.29",
     "moment": "^2.30.1",
     "moment-timezone": "^0.5.44",
     "pg": "^8.11.3",

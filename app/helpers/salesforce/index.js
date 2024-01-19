@@ -1,13 +1,31 @@
-const { login } = require('./login');
-const { describe } = require('./describe');
+const { sessionId, restUrl, login } = require('./login');
 const { query } = require('./query');
-const { getSalesforceColumns } = require('./schema');
-const { jobsQueryToCSV } = require('./jobs');
+const {
+  getSalesforceColumns,
+  getDatabaseColumns,
+  getCreateableFields,
+  getUpdateableFields
+} = require('./schema');
+const { jobsQueryToCSV, jobQueryStatus, jobQueryResults } = require('./jobs');
+const {
+  getSobjectDescribe,
+  createSobjectRecord,
+  updateSobjectRecord
+} = require('./sobjects');
 
 module.exports = {
+  sessionId,
+  restUrl,
   login,
-  describe,
   query,
   getSalesforceColumns,
-  jobsQueryToCSV
+  getDatabaseColumns,
+  getCreateableFields,
+  getUpdateableFields,
+  jobsQueryToCSV,
+  jobQueryStatus,
+  jobQueryResults,
+  getSobjectDescribe,
+  createSobjectRecord,
+  updateSobjectRecord
 };

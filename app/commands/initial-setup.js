@@ -3,6 +3,7 @@ const postgres = require('../helpers/postgres');
 
 module.exports = async rawLogger => {
   const logger = rawLogger.child({ library: 'initial-setup' });
+  logger.info('Start initial-setup command');
 
   const postgresSchema = config.get('salesforce.postgresSchema');
 
@@ -36,4 +37,6 @@ module.exports = async rawLogger => {
     ],
     logger
   );
+
+  logger.info('Completed initial-setup command');
 };

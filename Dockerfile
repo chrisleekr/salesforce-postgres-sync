@@ -1,7 +1,7 @@
 # development stage
 FROM node:20-alpine AS dev-stage
 
-RUN apk add --no-cache make gcc g++ py-pip
+# RUN apk add --no-cache make gcc g++ py-pip
 
 WORKDIR /srv
 
@@ -22,9 +22,8 @@ FROM dev-stage AS build-stage
 
 RUN npm run build
 
-RUN rm -rf node_modules
-
-RUN npm install --production
+RUN rm -rf node_modules && \
+  npm install --production
 
 # production stage
 FROM node:20-alpine AS production-stage
@@ -36,6 +35,5 @@ LABEL com.chrisleekr.salesforce-postgres-sync.package-version=${PACKAGE_VERSION}
 WORKDIR /srv
 
 COPY --from=build-stage /srv /srv
-
 
 CMD [ "npm", "start"]

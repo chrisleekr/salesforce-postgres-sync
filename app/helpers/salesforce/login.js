@@ -1,7 +1,11 @@
 const axios = require('axios');
 const config = require('config');
 
-const soapUrl = 'https://test.salesforce.com/services/Soap/u/59.0';
+const salesforceMode = config.get('salesforce.mode');
+const soapUrl =
+  salesforceMode === 'production'
+    ? 'https://login.salesforce.com/services/Soap/u/59.0'
+    : 'https://test.salesforce.com/services/Soap/u/59.0';
 
 const username = config.get('salesforce.username');
 const password = config.get('salesforce.password');
@@ -18,6 +22,9 @@ const loginEnvelope = `
     </soapenv:Body>
 </soapenv:Envelope>
 `;
+
+let sessionId = '';
+let restUrl = '';
 
 const login = async logger => {
   const response = await axios.post(soapUrl, loginEnvelope, {
@@ -37,29 +44,26 @@ const login = async logger => {
   // Note that it's not recommended to parse XML with regex,
   // but this is a simple method without adding another dependency.
   const sessionIdMatch = data.match(/<sessionId>(.*?)<\/sessionId>/);
-  const sessionId = sessionIdMatch ? sessionIdMatch[1] : '';
+  sessionId = sessionIdMatch ? sessionIdMatch[1] : '';
 
   const serverUrlMatch = data.match(/<serverUrl>(.*?)<\/serverUrl>/);
   const serverUrl = serverUrlMatch ? serverUrlMatch[1] : '';
 
-  const userIdMatch = data.match(/<userId>(.*?)<\/userId>/);
-  const userId = userIdMatch ? userIdMatch[1] : '';
+  // Create REST URL from serverUrl
+  restUrl = `${new URL(serverUrl).origin}/services/data/v59.0`;
 
-  const organizationIdMatch = data.match(
-    /<organizationId>(.*?)<\/organizationId>/
+  logger.info(
+    {
+      sessionId,
+      serverUrl,
+      restUrl
+    },
+    'Parsed login response'
   );
-  const organizationId = organizationIdMatch ? organizationIdMatch[1] : '';
-
-  return {
-    sessionId,
-    serverUrl,
-    userId,
-    organizationId,
-    // Create REST URL from serverUrl
-    restUrl: `${new URL(serverUrl).origin}/services/data/v59.0`
-  };
 };
 
 module.exports = {
+  sessionId,
+  restUrl,
   login
 };

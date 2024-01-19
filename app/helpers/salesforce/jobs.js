@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { restUrl, sessionId } = require('./login');
 
 /*
   Create bulk query job
@@ -31,7 +32,7 @@ const axios = require('axios');
       "columnDelimiter" : "COMMA"
     }
   */
-const jobsQueryToCSV = async (query, { restUrl, sessionId }, logger) => {
+const jobsQueryToCSV = async (query, logger) => {
   const queryJobResponse = await axios.post(
     `${restUrl}/jobs/query`,
     {
@@ -52,12 +53,15 @@ const jobsQueryToCSV = async (query, { restUrl, sessionId }, logger) => {
     { status: queryJobResponse.status, data: queryJobResponse.data },
     'query job response'
   );
+
+  return queryJobResponse;
 };
 
 /*
 Loop until the job state is JobComplete
     Maximum loop is 10 minutes
- Retrieve job status - https://developer.salesforce.com/docs/atlas.en-us.api_asynch.meta/api_asynch/query_get_one_job.htm
+ Retrieve job status
+  - https://developer.salesforce.com/docs/atlas.en-us.api_asynch.meta/api_asynch/query_get_one_job.htm
 Sample Request
   GET restUrl/jobs/query/${jobId}
   Authorization: Bearer ${sessionId}
@@ -81,7 +85,7 @@ Sample Response
     "totalProcessingTime" : 334
   }
 */
-const jobQueryStatus = async (jobId, { restUrl, sessionId }, logger) => {
+const jobQueryStatus = async (jobId, logger) => {
   const jobStatusResponse = await axios.get(`${restUrl}/jobs/query/${jobId}`, {
     headers: {
       Authorization: `Bearer ${sessionId}`
@@ -100,4 +104,60 @@ const jobQueryStatus = async (jobId, { restUrl, sessionId }, logger) => {
   return jobStatusResponse;
 };
 
-module.exports = { jobsQueryToCSV, jobQueryStatus };
+//
+//
+/*
+  Get results for the query job
+- https://developer.salesforce.com/docs/atlas.en-us.api_asynch.meta/api_asynch/query_get_job_results.htm
+  Loop until Sforce-Locator is null
+  Sample Request
+    GET /jobs/query/${jobId}/results?maxRecords=50000
+    Authorization: Bearer ${sessionId}
+    Accept: text/csv
+  Sample Response
+    Sforce-Locator: MTAwMDA
+    Sforce-NumberOfRecords: 50000
+    ...
+
+    "Id","Name"
+    "005R0000000UyrWIAS","Jane Dunn"
+    "005R0000000GiwjIAC","George Wright"
+    "005R0000000GiwoIAC","Pat Wilson"
+
+
+  Save contents to /tmp/${objectName}-${jobId}-1.csv
+  Extract the Sforce-Locator header from the response
+     Request GET /jobs/query/${jobId}/results?locator=${Sforce-Locator}&maxRecords=50000
+    Save contents to /tmp/${objectName}-${jobId}-2.csv
+  */
+const jobQueryResults = async (jobId, sForceLocator, logger) => {
+  const jobResultsUrl = `${restUrl}/jobs/query/${jobId}/results?maxRecords=100000${
+    sForceLocator && sForceLocator !== 'null' ? `&locator=${sForceLocator}` : ''
+  }`;
+  logger.info({ jobResultsUrl }, 'Getting job results');
+  const jobResultsResponse = await axios.get(
+    jobResultsUrl,
+    {
+      headers: {
+        Authorization: `Bearer ${sessionId}`,
+        Accept: 'text/csv'
+      }
+    },
+    {
+      timeout: 1000 * 60 * 5
+      // 5 minutes, for some reason, sometimes the request is taking a long time.
+      // Then timeout first and then retry.
+    }
+  );
+  logger.info(
+    {
+      status: jobResultsResponse.status,
+      headers: jobResultsResponse.headers
+    },
+    'Job results response'
+  );
+
+  return jobResultsResponse;
+};
+
+module.exports = { jobsQueryToCSV, jobQueryStatus, jobQueryResults };

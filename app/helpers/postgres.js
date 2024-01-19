@@ -220,6 +220,43 @@ const createOrUpdateTable = async (
   logger.info(`Created or updated table ${schemaName}.${tableName}`);
 };
 
+const initialSetup = async rawLogger => {
+  const logger = rawLogger.child({ library: 'initial-setup' });
+
+  const postgresSchema = config.get('salesforce.postgresSchema');
+
+  await createSchemaIfNotExists(postgresSchema, logger);
+
+  await createOrUpdateTable(
+    postgresSchema,
+    '_config',
+    [
+      {
+        name: 'id',
+        type: 'integer',
+        notNull: true,
+        primaryKey: true,
+        defaultSequence: true
+      },
+      {
+        name: 'key',
+        type: 'varchar(255)',
+        createUniqueIndex: true
+      },
+      {
+        name: 'value',
+        type: 'text'
+      },
+      {
+        name: 'update_timestamp',
+        type: 'timestamp',
+        defaultNow: true
+      }
+    ],
+    logger
+  );
+};
+
 const upsert = async (
   schemaName,
   tableName,
@@ -499,6 +536,7 @@ module.exports = {
   connect,
   createSchemaIfNotExists,
   createOrUpdateTable,
+  initialSetup,
   upsert,
   select,
   update,

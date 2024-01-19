@@ -1,12 +1,8 @@
-/* eslint-disable no-continue */
-const axios = require('axios');
 const moment = require('moment');
 const config = require('config');
-const logger = require('../../helpers/logger');
-const dbConfig = require('../../helpers/db-config');
-const postgres = require('../../helpers/postgres');
 
-const { salesforceLogin } = require('./salesforce-login');
+const postgres = require('../helpers/postgres');
+const salesforce = require('../helpers/salesforce');
 
 const processPendingRecord = (
   objectName,
@@ -46,16 +42,13 @@ const processPendingRecord = (
   return updatedSalesforceRecord;
 };
 
-(async () => {
+module.exports = async rawLogger => {
+  const logger = rawLogger.child({ library: 'postgres-to-salesforce' });
+
+  logger.info('Start postgres-to-salesforce command');
+
   try {
-    // Connect to Postgres
-    await postgres.connect(logger);
-
     const schemaName = config.get('salesforce.postgresSchema');
-
-    const { restUrl, sessionId } = await salesforceLogin();
-
-    logger.info({ sessionId, restUrl }, 'Parsed login response');
 
     const configuredObjects = config.get('salesforce.objects');
 
@@ -71,30 +64,23 @@ const processPendingRecord = (
         continue;
       }
 
-      const objectSchema = JSON.parse(
-        await dbConfig.get(`${objectName}-schema`, logger)
-      );
       // Get name of fields if isSalesforceColumn is true
-      const databaseColumns = objectSchema.reduce((acc, field) => {
-        acc.push(field.name);
-        return acc;
-      }, []);
+      const databaseColumns = await salesforce.getDatabaseColumns(
+        objectName,
+        logger
+      );
 
       // Get createable fields from postgres
-      const createableFields = objectSchema.reduce((acc, field) => {
-        if (field.canCreate) {
-          acc.push(field);
-        }
-        return acc;
-      }, []);
+      const createableFields = await salesforce.getCreateableFields(
+        objectName,
+        logger
+      );
 
       // Get updatable fields from postgres
-      const updateableFields = objectSchema.reduce((acc, field) => {
-        if (field.canUpdate) {
-          acc.push(field);
-        }
-        return acc;
-      }, []);
+      const updateableFields = await salesforce.getUpdateableFields(
+        objectName,
+        logger
+      );
 
       // Get all _sync_status = 'PENDING' records that need to be synced to Salesforce
       const pendingRecords = await postgres.select(
@@ -151,26 +137,10 @@ const processPendingRecord = (
           }
 
           // Create record in Salesforce
-          const createUrl = `${restUrl}/sobjects/${objectName}`;
-          logger.info(
-            {
-              data: {
-                createUrl,
-                salesforceRecord
-              }
-            },
-            `Creating new record in Salesforce`
-          );
-
-          const salesforceResponse = await axios.post(
-            createUrl,
+          const salesforceResponse = await salesforce.createSobjectRecord(
+            objectName,
             salesforceRecord,
-            {
-              headers: {
-                Authorization: `Bearer ${sessionId}`,
-                'Content-Type': 'application/json'
-              }
-            }
+            logger
           );
 
           const result = salesforceResponse.data;
@@ -233,27 +203,14 @@ const processPendingRecord = (
             throw new Error('No updateable fields found');
           }
 
-          // Update record in Salesforce
-          const updateUrl = `${restUrl}/sobjects/${objectName}/${pendingRecord.id}`;
-          logger.info(
-            {
-              data: {
-                updateUrl,
-                salesforceRecord
-              }
-            },
-            `Updating existing record in Salesforce`
-          );
+          salesforceRecord.id = pendingRecord.id;
 
-          const salesforceResponse = await axios.patch(
-            updateUrl,
+          // Update record in Salesforce
+
+          const salesforceResponse = await salesforce.updateSobjectRecord(
+            objectName,
             salesforceRecord,
-            {
-              headers: {
-                Authorization: `Bearer ${sessionId}`,
-                'Content-Type': 'application/json'
-              }
-            }
+            logger
           );
 
           const result = salesforceResponse.data;
@@ -285,9 +242,6 @@ const processPendingRecord = (
         }
       }
     }
-
-    logger.info('Done');
-    process.exit(0);
   } catch (err) {
     if (err.response) {
       // The request was made and the server responded with a status code
@@ -319,6 +273,8 @@ const processPendingRecord = (
       logger.error({ err }, 'Error occurred');
     }
 
-    process.exit(1);
+    throw err;
   }
-})();
+
+  logger.info('Completed postgres-to-salesforce command');
+};
