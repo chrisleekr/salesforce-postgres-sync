@@ -1,48 +1,47 @@
 const logger = require('./helpers/logger');
 const postgres = require('./helpers/postgres');
 const salesforce = require('./helpers/salesforce');
-
-const createSchema = require('./libraries/create-schema');
-const initialSetup = require('./libraries/initial-setup');
-const syncTableSchema = require('./libraries/sync-table-schema');
-const salesforceToPostgres = require('./libraries/salesforce-to-postgres');
-const postgresToSalesforce = require('./libraries/postgres-to-salesforce');
+const commands = require('./commands');
 
 (async () => {
-  logger.info('Starting Salesforce Postgres Sync');
+  try {
+    logger.info('Starting Salesforce Postgres Sync');
 
-  // Connect to Postgres
-  await postgres.connect(logger);
+    // Connect to Postgres
+    await postgres.connect(logger);
 
-  // Login to Salesforce
-  await salesforce.login(logger);
+    // Login to Salesforce
+    await salesforce.login(logger);
 
-  // Create a Postgres schema if not exists
-  await createSchema(logger);
+    // Create a Postgres schema if not exists and initialise database config table
+    await commands.initialSetup(logger);
 
-  // Setup initial tables
-  await initialSetup(logger);
+    // Create a Postgres table from Salesforce objects
+    await commands.syncTables(logger);
 
-  // Create a Postgres table from Salesforce objects
-  await syncTableSchema(logger);
+    // Do clean sync if necessary
+    await commands.salesforceToPostgresCleanSync(logger);
 
-  let isSyncRunning = false;
+    let isSyncRunning = false;
 
-  setInterval(async () => {
-    if (!isSyncRunning) {
-      isSyncRunning = true;
+    setInterval(async () => {
+      if (!isSyncRunning) {
+        isSyncRunning = true;
 
-      logger.info('Starting Salesforce to Postgres sync');
-      await salesforceToPostgres(logger);
-      logger.info('Completed Salesforce to Postgres sync');
+        logger.info('Starting Salesforce to Postgres - Increment update');
+        await commands.salesforceToPostgresIncrementUpdate(logger);
+        logger.info('Completed Salesforce to Postgres - Increment update');
 
-      logger.info('Starting Postgres to Salesforce sync');
-      await postgresToSalesforce(logger);
-      logger.info('Completed Postgres to Salesforce sync');
+        logger.info('Starting Postgres to Salesforce');
+        await commands.postgresToSalesforce(logger);
+        logger.info('Completed Postgres to Salesforce');
 
-      isSyncRunning = false;
-    } else {
-      logger.info('Salesforce to Postgres sync is already running');
-    }
-  }, 60000); // 60000 milliseconds = 1 minute
+        isSyncRunning = false;
+      } else {
+        logger.info('Sync is currently running, wait for next tick...');
+      }
+    }, 60000); // 60000 milliseconds = 1 minute
+  } catch (err) {
+    logger.error(err);
+  }
 })();
