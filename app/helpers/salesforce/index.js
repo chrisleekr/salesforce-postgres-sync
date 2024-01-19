@@ -1,4 +1,4 @@
-const { sessionId, restUrl, login } = require('./login');
+const { getLoginDetails, login } = require('./login');
 const { query } = require('./query');
 const {
   getSalesforceColumns,
@@ -14,8 +14,7 @@ const {
 } = require('./sobjects');
 
 module.exports = {
-  sessionId,
-  restUrl,
+  getLoginDetails,
   login,
   query,
   getSalesforceColumns,

@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { restUrl, sessionId } = require('./login');
+const { getLoginDetails } = require('./login');
 
 /*
   Create bulk query job
@@ -33,6 +33,7 @@ const { restUrl, sessionId } = require('./login');
     }
   */
 const jobsQueryToCSV = async (query, logger) => {
+  const { restUrl, sessionId } = getLoginDetails();
   const queryJobResponse = await axios.post(
     `${restUrl}/jobs/query`,
     {
@@ -86,6 +87,7 @@ Sample Response
   }
 */
 const jobQueryStatus = async (jobId, logger) => {
+  const { restUrl, sessionId } = getLoginDetails();
   const jobStatusResponse = await axios.get(`${restUrl}/jobs/query/${jobId}`, {
     headers: {
       Authorization: `Bearer ${sessionId}`
@@ -131,6 +133,7 @@ const jobQueryStatus = async (jobId, logger) => {
     Save contents to /tmp/${objectName}-${jobId}-2.csv
   */
 const jobQueryResults = async (jobId, sForceLocator, logger) => {
+  const { restUrl, sessionId } = getLoginDetails();
   const jobResultsUrl = `${restUrl}/jobs/query/${jobId}/results?maxRecords=100000${
     sForceLocator && sForceLocator !== 'null' ? `&locator=${sForceLocator}` : ''
   }`;

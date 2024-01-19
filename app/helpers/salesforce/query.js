@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { restUrl, sessionId } = require('./login');
+const { getLoginDetails } = require('./login');
 
 // https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_query.htm?q=query
 // Sample Request
@@ -27,6 +27,8 @@ const { restUrl, sessionId } = require('./login');
   }
 */
 const query = async (soqlQuery, onRecord, logger) => {
+  const { restUrl, sessionId } = getLoginDetails();
+
   let totalSize;
   let done;
   let nextRecordsUrl;

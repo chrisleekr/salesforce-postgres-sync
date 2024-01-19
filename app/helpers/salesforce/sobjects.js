@@ -1,7 +1,8 @@
 const axios = require('axios');
-const { restUrl, sessionId } = require('./login');
+const { getLoginDetails } = require('./login');
 
 const getSobjectDescribe = async (objectName, logger) => {
+  const { restUrl, sessionId } = getLoginDetails();
   // Execute Salesforce REST API with Bearer token with sessionId to execute describe for `Account` object
   const describeUrl = `${restUrl}/sobjects/${objectName}/describe/`;
   const describeResponse = await axios.get(describeUrl, {
@@ -20,6 +21,7 @@ const getSobjectDescribe = async (objectName, logger) => {
 };
 
 const createSobjectRecord = async (objectName, salesforceRecord, logger) => {
+  const { restUrl, sessionId } = getLoginDetails();
   const createUrl = `${restUrl}/sobjects/${objectName}`;
   logger.info(
     {
@@ -42,6 +44,7 @@ const createSobjectRecord = async (objectName, salesforceRecord, logger) => {
 };
 
 const updateSobjectRecord = async (objectName, salesforceRecord, logger) => {
+  const { restUrl, sessionId } = getLoginDetails();
   const updateUrl = `${restUrl}/sobjects/${objectName}/${salesforceRecord.id}`;
   logger.info(
     {

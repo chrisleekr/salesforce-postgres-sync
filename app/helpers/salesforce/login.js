@@ -62,8 +62,14 @@ const login = async logger => {
   );
 };
 
+const getLoginDetails = () => ({
+  sessionId,
+  restUrl
+});
+
 module.exports = {
   sessionId,
   restUrl,
-  login
+  login,
+  getLoginDetails
 };
